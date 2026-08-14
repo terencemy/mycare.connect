@@ -47,28 +47,54 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [selectedResident, setSelectedResident] = useState<Resident>(residents[0]);
 
-  // Photo state
-  const [selectedPresetIndex, setSelectedPresetIndex] = useState<number>(0);
+  // Helper: check if resident already completed today
+  const getResidentTodayRecord = (resId: string) => {
+    return morningVitals.find((v) => v.residentId === resId);
+  };
+
+  const existingRecord = getResidentTodayRecord(selectedResident?.id || '');
+
+  // Photo state (strictly blank / pending upload when no photo exists)
+  const [selectedPresetIndex, setSelectedPresetIndex] = useState<number>(-1);
   const [currentRawPhotoUrl, setCurrentRawPhotoUrl] = useState<string>(
-    SAMPLE_VITALS_PRESETS[0].imageUrl
+    existingRecord?.vitalsPhotoUrl || ''
   );
-  const [watermarkedPhotoUrl, setWatermarkedPhotoUrl] = useState<string>('');
+  const [watermarkedPhotoUrl, setWatermarkedPhotoUrl] = useState<string>(
+    existingRecord?.vitalsPhotoUrl || ''
+  );
   const [isWatermarking, setIsWatermarking] = useState(false);
 
-  // Vitals readings
-  const [bloodPressure, setBloodPressure] = useState<string>('118/76');
-  const [pulseRate, setPulseRate] = useState<number>(72);
-  const [spo2, setSpo2] = useState<number>(98);
-  const [temperature, setTemperature] = useState<number>(36.6);
-  const [bloodSugar, setBloodSugar] = useState<number | undefined>(5.4);
-  const [deviceType, setDeviceType] = useState<string>('Digital Upper-Arm Blood Pressure Monitor');
-  const [notes, setNotes] = useState<string>('Awake, comfortable, baseline readings stable.');
-  const [status, setStatus] = useState<'normal' | 'attention_needed' | 'critical'>('normal');
+  // Vitals readings (strictly blank / pending upload if no photo/record)
+  const [bloodPressure, setBloodPressure] = useState<string>(
+    existingRecord?.readings.bloodPressure || ''
+  );
+  const [pulseRate, setPulseRate] = useState<number | undefined>(
+    existingRecord?.readings.pulseRate
+  );
+  const [spo2, setSpo2] = useState<number | undefined>(
+    existingRecord?.readings.spo2
+  );
+  const [temperature, setTemperature] = useState<number | undefined>(
+    existingRecord?.readings.temperature
+  );
+  const [bloodSugar, setBloodSugar] = useState<number | undefined>(
+    existingRecord?.readings.bloodSugar
+  );
+  const [deviceType, setDeviceType] = useState<string>(
+    existingRecord?.deviceType || ''
+  );
+  const [notes, setNotes] = useState<string>(
+    existingRecord?.notes || ''
+  );
+  const [status, setStatus] = useState<'normal' | 'attention_needed' | 'critical'>(
+    existingRecord?.status || 'normal'
+  );
 
   // AI OCR / Vision analysis state
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
-  const [aiConfidence, setAiConfidence] = useState<number | null>(94);
-  const [aiExtracted, setAiExtracted] = useState<boolean>(true);
+  const [aiConfidence, setAiConfidence] = useState<number | null>(null);
+  const [aiExtracted, setAiExtracted] = useState<boolean>(!!existingRecord);
+  const [aiFeedbackMessage, setAiFeedbackMessage] = useState<string>('');
 
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -85,12 +111,53 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
     return () => clearInterval(timer);
   }, []);
 
+  // When selected resident changes, sync state with their existing record or reset to blank pending upload
+  const handleSelectResident = (r: Resident) => {
+    setSelectedResident(r);
+    const rec = getResidentTodayRecord(r.id);
+    if (rec) {
+      setCurrentRawPhotoUrl(rec.vitalsPhotoUrl);
+      setWatermarkedPhotoUrl(rec.vitalsPhotoUrl);
+      setBloodPressure(rec.readings.bloodPressure || '');
+      setPulseRate(rec.readings.pulseRate);
+      setSpo2(rec.readings.spo2);
+      setTemperature(rec.readings.temperature);
+      setBloodSugar(rec.readings.bloodSugar);
+      setDeviceType(rec.deviceType || 'Digital Vital Signs Monitor');
+      setNotes(rec.notes || '');
+      setStatus(rec.status || 'normal');
+      setAiExtracted(true);
+      setAiConfidence(96);
+      setSelectedPresetIndex(-1);
+      setAiFeedbackMessage('Loaded existing audited morning record.');
+    } else {
+      // RESET TO BLANK PENDING UPLOAD
+      setCurrentRawPhotoUrl('');
+      setWatermarkedPhotoUrl('');
+      setBloodPressure('');
+      setPulseRate(undefined);
+      setSpo2(undefined);
+      setTemperature(undefined);
+      setBloodSugar(undefined);
+      setDeviceType('');
+      setNotes('');
+      setStatus('normal');
+      setAiExtracted(false);
+      setAiConfidence(null);
+      setSelectedPresetIndex(-1);
+      setAiFeedbackMessage('');
+    }
+  };
+
   // Update watermark whenever resident, raw photo, readings, or time changes
   useEffect(() => {
     let isCancelled = false;
 
     async function generateWatermark() {
-      if (!currentRawPhotoUrl || !selectedResident) return;
+      if (!currentRawPhotoUrl || !selectedResident) {
+        setWatermarkedPhotoUrl('');
+        return;
+      }
       setIsWatermarking(true);
       try {
         const watermarked = await applyVitalsWatermark(currentRawPhotoUrl, {
@@ -100,7 +167,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
           caregiverName: caregiver.name,
           timestamp: currentTime,
           isBefore7am: currentTime.getHours() < 7,
-          bloodPressure,
+          bloodPressure: bloodPressure || undefined,
           pulseRate,
           spo2,
           temperature,
@@ -123,15 +190,82 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [currentRawPhotoUrl, selectedResident, caregiver.name]);
-
-  // Helper: check if resident already completed today
-  const getResidentTodayRecord = (resId: string) => {
-    return morningVitals.find((v) => v.residentId === resId);
-  };
+  }, [currentRawPhotoUrl, selectedResident, caregiver.name, bloodPressure, pulseRate, spo2, temperature]);
 
   const completedCount = residents.filter((r) => getResidentTodayRecord(r.id)).length;
   const isCurrentlyPre7Am = currentTime.getHours() < 7;
+
+  // AI Vision analysis with Gemini
+  const analyzePhotoWithAI = async (photoInput: string, customDeviceHint?: string) => {
+    if (!photoInput) return;
+    setIsAnalyzingPhoto(true);
+    setAiFeedbackMessage('Gemini AI Vision is scanning monitor screen for numerical readings...');
+
+    try {
+      const res = await fetch('/api/vitals/analyze-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mediaBase64: photoInput.startsWith('data:') ? photoInput : undefined,
+          mediaUrl: photoInput.startsWith('http') ? photoInput : undefined,
+          residentFullName: selectedResident?.fullName,
+          deviceHint: customDeviceHint || deviceType || undefined,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        // Update fields strictly from what the AI read on screen
+        if (data.bloodPressure) {
+          setBloodPressure(data.bloodPressure);
+        } else {
+          setBloodPressure('');
+        }
+
+        if (data.pulseRate !== null && data.pulseRate !== undefined) {
+          setPulseRate(data.pulseRate);
+        } else {
+          setPulseRate(undefined);
+        }
+
+        if (data.spo2 !== null && data.spo2 !== undefined) {
+          setSpo2(data.spo2);
+        } else {
+          setSpo2(undefined);
+        }
+
+        if (data.temperature !== null && data.temperature !== undefined) {
+          setTemperature(data.temperature);
+        } else {
+          setTemperature(undefined);
+        }
+
+        if (data.bloodSugar !== null && data.bloodSugar !== undefined) {
+          setBloodSugar(data.bloodSugar);
+        } else {
+          setBloodSugar(undefined);
+        }
+
+        if (data.deviceType) setDeviceType(data.deviceType);
+        if (data.status) setStatus(data.status);
+        if (data.clinicalNotes) {
+          setNotes(data.clinicalNotes);
+          setAiFeedbackMessage(data.clinicalNotes);
+        }
+        if (data.aiConfidence !== undefined && data.aiConfidence !== null) {
+          setAiConfidence(data.aiConfidence);
+        }
+        setAiExtracted(true);
+      } else {
+        setAiFeedbackMessage('AI vision service unavailable. Please review or enter readings manually.');
+      }
+    } catch (err) {
+      console.warn('AI analysis error:', err);
+      setAiFeedbackMessage('Unable to complete AI scan. You may enter readings manually.');
+    } finally {
+      setIsAnalyzingPhoto(false);
+    }
+  };
 
   // Handle Preset selection
   const handleSelectPreset = (index: number) => {
@@ -139,67 +273,48 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
     setSelectedPresetIndex(index);
     setCurrentRawPhotoUrl(preset.imageUrl);
     setDeviceType(preset.deviceType);
-    setBloodPressure(preset.suggestedReadings.bloodPressure);
-    setPulseRate(preset.suggestedReadings.pulseRate);
-    setSpo2(preset.suggestedReadings.spo2);
-    setTemperature(preset.suggestedReadings.temperature);
-    setBloodSugar(preset.suggestedReadings.bloodSugar);
-    setAiConfidence(95);
-    setAiExtracted(true);
+    // Trigger real AI analysis on the preset photo
+    analyzePhotoWithAI(preset.imageUrl, preset.deviceType);
   };
 
-  // Handle local file upload
+  // Handle local file upload (camera or file)
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setSelectedPresetIndex(-1);
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
       setCurrentRawPhotoUrl(dataUrl);
-      // Run AI Vision on newly uploaded photo
+      // Run real AI Vision OCR on newly uploaded photo
       analyzePhotoWithAI(dataUrl);
     };
     reader.readAsDataURL(file);
   };
 
-  // AI Vision analysis
-  const analyzePhotoWithAI = async (photoBase64: string) => {
-    setIsAnalyzingPhoto(true);
-    try {
-      const res = await fetch('/api/vitals/analyze-photo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mediaBase64: photoBase64,
-          residentFullName: selectedResident?.fullName,
-          deviceHint: deviceType,
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.bloodPressure) setBloodPressure(data.bloodPressure);
-        if (data.pulseRate) setPulseRate(data.pulseRate);
-        if (data.spo2) setSpo2(data.spo2);
-        if (data.temperature) setTemperature(data.temperature);
-        if (data.bloodSugar) setBloodSugar(data.bloodSugar);
-        if (data.deviceType) setDeviceType(data.deviceType);
-        if (data.status) setStatus(data.status);
-        if (data.clinicalNotes) setNotes(data.clinicalNotes);
-        if (data.aiConfidence) setAiConfidence(data.aiConfidence);
-        setAiExtracted(true);
-      }
-    } catch (err) {
-      console.warn('AI analysis fallback:', err);
-    } finally {
-      setIsAnalyzingPhoto(false);
-    }
+  // Clear current photo back to blank
+  const handleClearPhoto = () => {
+    setCurrentRawPhotoUrl('');
+    setWatermarkedPhotoUrl('');
+    setBloodPressure('');
+    setPulseRate(undefined);
+    setSpo2(undefined);
+    setTemperature(undefined);
+    setBloodSugar(undefined);
+    setDeviceType('');
+    setNotes('');
+    setStatus('normal');
+    setAiExtracted(false);
+    setAiConfidence(null);
+    setSelectedPresetIndex(-1);
+    setAiFeedbackMessage('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // Save Morning Vitals Record
   const handleSave = async () => {
-    if (!selectedResident) return;
+    if (!selectedResident || !currentRawPhotoUrl) return;
     setIsSubmitting(true);
 
     try {
@@ -216,13 +331,13 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
         caregiverName: caregiver.name,
         vitalsPhotoUrl: finalPhotoUrl,
         readings: {
-          bloodPressure,
+          bloodPressure: bloodPressure || undefined,
           pulseRate,
           spo2,
           temperature,
           bloodSugar,
         },
-        deviceType,
+        deviceType: deviceType || 'Vital Signs Monitor',
         recordedAt: currentTime.toISOString(),
         formattedTime: currentTime.toLocaleTimeString('en-US', {
           hour: '2-digit',
@@ -235,7 +350,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
           year: 'numeric',
         }),
         isBefore7am,
-        notes,
+        notes: notes || 'Morning vital signs round completed.',
         status,
         aiExtracted,
       });
@@ -325,7 +440,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                   key={r.id}
                   id={`select-morning-resident-${r.id}`}
                   type="button"
-                  onClick={() => setSelectedResident(r)}
+                  onClick={() => handleSelectResident(r)}
                   className={`p-3 rounded-2xl text-left border transition-all cursor-pointer flex items-center justify-between ${
                     isSelected
                       ? 'bg-[#F7F5F0] border-2 border-[#889E81] shadow-xs'
@@ -359,9 +474,9 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                     ) : (
                       <span
                         title="Pending Pre-7AM Photo"
-                        className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#F0ECE2] text-[#7C7C6D] border border-[#E6E2D3]"
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]"
                       >
-                        Pending
+                        Pending upload
                       </span>
                     )}
                   </div>
@@ -384,24 +499,72 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                   1. Vital Sign Device Photo &amp; Watermark
                 </h3>
               </div>
-              <span className="text-[11px] font-semibold text-[#889E81] bg-[#EBF1EA] px-2.5 py-0.5 rounded-full border border-[#889E81]/30 flex items-center space-x-1">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Auto-Watermark Active</span>
-              </span>
+              {currentRawPhotoUrl ? (
+                <div className="flex items-center space-x-2">
+                  <span className="text-[11px] font-semibold text-[#889E81] bg-[#EBF1EA] px-2.5 py-0.5 rounded-full border border-[#889E81]/30 flex items-center space-x-1">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>Watermark Active</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleClearPhoto}
+                    className="text-[10px] text-red-600 hover:text-red-700 font-bold px-2 py-0.5 rounded-md hover:bg-red-50 cursor-pointer"
+                  >
+                    Clear Photo
+                  </button>
+                </div>
+              ) : (
+                <span className="text-[11px] font-bold text-[#92400E] bg-[#FEF3C7] px-2.5 py-0.5 rounded-full border border-[#FDE68A] flex items-center space-x-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>Pending upload</span>
+                </span>
+              )}
             </div>
 
-            {/* Photo Preview Container with Live Watermark */}
+            {/* Photo Preview Container with Live Watermark OR Pending Upload Placeholder */}
             <div className="relative rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2D2D24] aspect-4/3 flex items-center justify-center group">
-              {watermarkedPhotoUrl ? (
-                <img
-                  src={watermarkedPhotoUrl}
-                  alt="Watermarked Vital Sign Monitor"
-                  className="w-full h-full object-cover"
-                />
+              {currentRawPhotoUrl ? (
+                watermarkedPhotoUrl ? (
+                  <img
+                    src={watermarkedPhotoUrl}
+                    alt="Watermarked Vital Sign Monitor"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="text-center p-6 text-[#FAF9F6]">
+                    <Activity className="w-10 h-10 text-[#889E81] mx-auto mb-2 animate-spin" />
+                    <p className="text-xs">Applying Clinical Watermark...</p>
+                  </div>
+                )
               ) : (
-                <div className="text-center p-6 text-[#FAF9F6]">
-                  <Activity className="w-10 h-10 text-[#889E81] mx-auto mb-2 animate-spin" />
-                  <p className="text-xs">Applying Clinical Watermark...</p>
+                /* Empty Pending Upload State */
+                <div className="flex flex-col items-center justify-center p-6 text-center space-y-3 bg-[#FAF9F6] w-full h-full border-2 border-dashed border-[#D6D2C4]">
+                  <div className="w-14 h-14 rounded-2xl bg-[#F0ECE2] text-[#7C7C6D] flex items-center justify-center border border-[#E6E2D3]">
+                    <Camera className="w-7 h-7" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-center space-x-2">
+                      <h4 className="text-sm font-bold text-[#5A5A40]">
+                        No Monitor Photo Uploaded
+                      </h4>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]">
+                        Pending upload
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#7C7C6D] max-w-xs mx-auto">
+                      Please upload or capture a photo of the vital signs monitor for{' '}
+                      <strong>{selectedResident?.fullName}</strong>. Gemini AI Vision will read the numbers automatically.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-4 py-2 bg-[#889E81] hover:bg-[#788E71] text-white rounded-full text-xs font-bold shadow-xs flex items-center space-x-2 transition-all cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Capture / Upload Monitor Photo</span>
+                  </button>
                 </div>
               )}
 
@@ -415,15 +578,28 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                 </div>
               )}
 
+              {/* AI Scanning Overlay */}
+              {isAnalyzingPhoto && (
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-2xs flex flex-col items-center justify-center p-4 text-white text-center space-y-2">
+                  <Sparkle className="w-8 h-8 text-emerald-400 animate-spin" />
+                  <div className="text-sm font-bold">Reading Monitor Screen with AI Vision...</div>
+                  <div className="text-xs text-white/80 max-w-xs">
+                    Gemini is extracting visible blood pressure, pulse, SpO2, and temperature directly from the photo pixels.
+                  </div>
+                </div>
+              )}
+
               {/* Zoom In button */}
-              <button
-                type="button"
-                onClick={() => setSelectedPreviewImage(watermarkedPhotoUrl || currentRawPhotoUrl)}
-                className="absolute top-3 right-3 p-2 bg-black/60 hover:bg-black/80 text-white rounded-full backdrop-blur-xs transition-opacity opacity-80 hover:opacity-100 cursor-pointer"
-                title="Zoom into Full Watermarked Photo"
-              >
-                <ZoomIn className="w-4 h-4" />
-              </button>
+              {currentRawPhotoUrl && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedPreviewImage(watermarkedPhotoUrl || currentRawPhotoUrl)}
+                  className="absolute top-3 right-3 p-2 bg-black/60 hover:bg-black/80 text-white rounded-full backdrop-blur-xs transition-opacity opacity-80 hover:opacity-100 cursor-pointer"
+                  title="Zoom into Full Watermarked Photo"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
             {/* Quick Upload or Device Preset Switcher */}
@@ -487,110 +663,172 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                 </h3>
               </div>
 
-              <button
-                type="button"
-                disabled={isAnalyzingPhoto}
-                onClick={() => analyzePhotoWithAI(currentRawPhotoUrl)}
-                className="px-3 py-1 bg-[#EBF1EA] hover:bg-[#dce6da] text-[#5A5A40] text-xs font-bold rounded-full border border-[#889E81]/30 flex items-center space-x-1.5 transition-all cursor-pointer disabled:opacity-50"
-              >
-                <Sparkle className={`w-3.5 h-3.5 text-[#889E81] ${isAnalyzingPhoto ? 'animate-spin' : ''}`} />
-                <span>{isAnalyzingPhoto ? 'Scanning...' : 'Re-Scan Monitor with AI'}</span>
-              </button>
+              {currentRawPhotoUrl ? (
+                <button
+                  type="button"
+                  disabled={isAnalyzingPhoto}
+                  onClick={() => analyzePhotoWithAI(currentRawPhotoUrl)}
+                  className="px-3 py-1 bg-[#EBF1EA] hover:bg-[#dce6da] text-[#5A5A40] text-xs font-bold rounded-full border border-[#889E81]/30 flex items-center space-x-1.5 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkle className={`w-3.5 h-3.5 text-[#889E81] ${isAnalyzingPhoto ? 'animate-spin' : ''}`} />
+                  <span>{isAnalyzingPhoto ? 'Scanning...' : 'Re-Scan Monitor with AI'}</span>
+                </button>
+              ) : (
+                <span className="text-[11px] font-bold text-[#92400E] bg-[#FEF3C7] px-2.5 py-0.5 rounded-full border border-[#FDE68A]">
+                  Readings: Pending upload
+                </span>
+              )}
             </div>
 
-            {/* AI Confidence Notice */}
-            <div className="bg-[#FAF9F6] rounded-2xl p-3.5 border border-[#E6E2D3] flex items-center justify-between text-xs text-[#5A5A40]">
+            {/* AI Confidence Notice / Status Banner */}
+            <div className={`rounded-2xl p-3.5 border flex items-center justify-between text-xs ${
+              currentRawPhotoUrl
+                ? 'bg-[#FAF9F6] border-[#E6E2D3] text-[#5A5A40]'
+                : 'bg-[#FFFBEB] border-[#FDE68A] text-[#92400E]'
+            }`}>
               <div className="flex items-center space-x-2">
-                <span className="w-2 h-2 rounded-full bg-[#889E81]"></span>
+                <span className={`w-2 h-2 rounded-full ${currentRawPhotoUrl ? 'bg-[#889E81]' : 'bg-[#D97706]'}`}></span>
                 <span>
-                  Detected: <strong>{deviceType}</strong>
+                  {currentRawPhotoUrl ? (
+                    <>
+                      Detected Device: <strong>{deviceType || 'Medical Monitor Display'}</strong>
+                    </>
+                  ) : (
+                    <>
+                      Status: <strong>No photo uploaded — Readings pending upload</strong>
+                    </>
+                  )}
                 </span>
               </div>
-              <span className="text-[11px] font-bold text-[#889E81]">
-                {aiConfidence ? `${aiConfidence}% AI Confidence` : 'OCR Verified'}
+              <span className="text-[11px] font-bold">
+                {currentRawPhotoUrl ? (
+                  aiConfidence ? `${aiConfidence}% AI Vision Confidence` : (aiExtracted ? 'OCR Verified' : 'Custom Input')
+                ) : (
+                  <span className="text-[#92400E]">Pending upload</span>
+                )}
               </span>
             </div>
+
+            {aiFeedbackMessage && (
+              <div className="text-[11px] p-2.5 bg-[#F0ECE2] rounded-xl border border-[#E6E2D3] text-[#5A5A40] flex items-center space-x-2">
+                <Sparkles className="w-3.5 h-3.5 text-[#889E81] shrink-0" />
+                <span>{aiFeedbackMessage}</span>
+              </div>
+            )}
 
             {/* Numeric Readings Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {/* Blood Pressure */}
               <div className="p-3 bg-[#FAF9F6] rounded-2xl border border-[#E6E2D3] space-y-1">
-                <label className="text-[10px] font-bold uppercase text-[#7C7C6D] flex items-center space-x-1">
-                  <Activity className="w-3 h-3 text-[#889E81]" />
-                  <span>Blood Pressure</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase text-[#7C7C6D] flex items-center space-x-1">
+                    <Activity className="w-3 h-3 text-[#889E81]" />
+                    <span>Blood Pressure</span>
+                  </label>
+                  {!bloodPressure && (
+                    <span className="text-[9px] text-[#92400E] font-bold bg-[#FEF3C7] px-1.5 py-0.2 rounded">
+                      Pending
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={bloodPressure}
                   onChange={(e) => setBloodPressure(e.target.value)}
-                  placeholder="120/80"
-                  className="w-full text-sm font-bold text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-xl px-2.5 py-1.5 focus:ring-2 focus:ring-[#889E81] focus:outline-none"
+                  placeholder="Pending upload"
+                  className="w-full text-sm font-bold text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-xl px-2.5 py-1.5 focus:ring-2 focus:ring-[#889E81] focus:outline-none placeholder:text-[#A8A89A] placeholder:font-normal"
                 />
                 <span className="text-[9px] text-[#8C8C7E]">mmHg (Sys / Dia)</span>
               </div>
 
               {/* Heart Rate */}
               <div className="p-3 bg-[#FAF9F6] rounded-2xl border border-[#E6E2D3] space-y-1">
-                <label className="text-[10px] font-bold uppercase text-[#7C7C6D] flex items-center space-x-1">
-                  <Heart className="w-3 h-3 text-[#889E81]" />
-                  <span>Pulse Rate</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase text-[#7C7C6D] flex items-center space-x-1">
+                    <Heart className="w-3 h-3 text-[#889E81]" />
+                    <span>Pulse Rate</span>
+                  </label>
+                  {pulseRate === undefined && (
+                    <span className="text-[9px] text-[#92400E] font-bold bg-[#FEF3C7] px-1.5 py-0.2 rounded">
+                      Pending
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
-                  value={pulseRate}
-                  onChange={(e) => setPulseRate(parseInt(e.target.value, 10) || 0)}
-                  placeholder="72"
-                  className="w-full text-sm font-bold text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-xl px-2.5 py-1.5 focus:ring-2 focus:ring-[#889E81] focus:outline-none"
+                  value={pulseRate !== undefined ? pulseRate : ''}
+                  onChange={(e) => setPulseRate(e.target.value === '' ? undefined : parseInt(e.target.value, 10))}
+                  placeholder="Pending upload"
+                  className="w-full text-sm font-bold text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-xl px-2.5 py-1.5 focus:ring-2 focus:ring-[#889E81] focus:outline-none placeholder:text-[#A8A89A] placeholder:font-normal"
                 />
                 <span className="text-[9px] text-[#8C8C7E]">beats / min (bpm)</span>
               </div>
 
               {/* SpO2 */}
               <div className="p-3 bg-[#FAF9F6] rounded-2xl border border-[#E6E2D3] space-y-1">
-                <label className="text-[10px] font-bold uppercase text-[#7C7C6D] flex items-center space-x-1">
-                  <Activity className="w-3 h-3 text-[#889E81]" />
-                  <span>Oxygen Saturation</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase text-[#7C7C6D] flex items-center space-x-1">
+                    <Activity className="w-3 h-3 text-[#889E81]" />
+                    <span>Oxygen (SpO2)</span>
+                  </label>
+                  {spo2 === undefined && (
+                    <span className="text-[9px] text-[#92400E] font-bold bg-[#FEF3C7] px-1.5 py-0.2 rounded">
+                      Pending
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
-                  value={spo2}
-                  onChange={(e) => setSpo2(parseInt(e.target.value, 10) || 0)}
-                  placeholder="98"
-                  className="w-full text-sm font-bold text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-xl px-2.5 py-1.5 focus:ring-2 focus:ring-[#889E81] focus:outline-none"
+                  value={spo2 !== undefined ? spo2 : ''}
+                  onChange={(e) => setSpo2(e.target.value === '' ? undefined : parseInt(e.target.value, 10))}
+                  placeholder="Pending upload"
+                  className="w-full text-sm font-bold text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-xl px-2.5 py-1.5 focus:ring-2 focus:ring-[#889E81] focus:outline-none placeholder:text-[#A8A89A] placeholder:font-normal"
                 />
                 <span className="text-[9px] text-[#8C8C7E]">% SpO2</span>
               </div>
 
               {/* Body Temperature */}
               <div className="p-3 bg-[#FAF9F6] rounded-2xl border border-[#E6E2D3] space-y-1">
-                <label className="text-[10px] font-bold uppercase text-[#7C7C6D] flex items-center space-x-1">
-                  <Activity className="w-3 h-3 text-[#889E81]" />
-                  <span>Temperature</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase text-[#7C7C6D] flex items-center space-x-1">
+                    <Activity className="w-3 h-3 text-[#889E81]" />
+                    <span>Temperature</span>
+                  </label>
+                  {temperature === undefined && (
+                    <span className="text-[9px] text-[#92400E] font-bold bg-[#FEF3C7] px-1.5 py-0.2 rounded">
+                      Pending
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
                   step="0.1"
-                  value={temperature}
-                  onChange={(e) => setTemperature(parseFloat(e.target.value) || 0)}
-                  placeholder="36.6"
-                  className="w-full text-sm font-bold text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-xl px-2.5 py-1.5 focus:ring-2 focus:ring-[#889E81] focus:outline-none"
+                  value={temperature !== undefined ? temperature : ''}
+                  onChange={(e) => setTemperature(e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                  placeholder="Pending upload"
+                  className="w-full text-sm font-bold text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-xl px-2.5 py-1.5 focus:ring-2 focus:ring-[#889E81] focus:outline-none placeholder:text-[#A8A89A] placeholder:font-normal"
                 />
                 <span className="text-[9px] text-[#8C8C7E]">°Celsius</span>
               </div>
 
               {/* Blood Sugar */}
               <div className="p-3 bg-[#FAF9F6] rounded-2xl border border-[#E6E2D3] space-y-1">
-                <label className="text-[10px] font-bold uppercase text-[#7C7C6D] flex items-center space-x-1">
-                  <Activity className="w-3 h-3 text-[#889E81]" />
-                  <span>Blood Glucose</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase text-[#7C7C6D] flex items-center space-x-1">
+                    <Activity className="w-3 h-3 text-[#889E81]" />
+                    <span>Blood Glucose</span>
+                  </label>
+                  {bloodSugar === undefined && (
+                    <span className="text-[9px] text-[#8C8C7E] italic">Optional</span>
+                  )}
+                </div>
                 <input
                   type="number"
                   step="0.1"
-                  value={bloodSugar || ''}
-                  onChange={(e) => setBloodSugar(parseFloat(e.target.value) || undefined)}
-                  placeholder="5.4"
-                  className="w-full text-sm font-bold text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-xl px-2.5 py-1.5 focus:ring-2 focus:ring-[#889E81] focus:outline-none"
+                  value={bloodSugar !== undefined ? bloodSugar : ''}
+                  onChange={(e) => setBloodSugar(e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                  placeholder="Pending upload"
+                  className="w-full text-sm font-bold text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-xl px-2.5 py-1.5 focus:ring-2 focus:ring-[#889E81] focus:outline-none placeholder:text-[#A8A89A] placeholder:font-normal"
                 />
                 <span className="text-[9px] text-[#8C8C7E]">mmol/L (Fasting)</span>
               </div>
@@ -622,7 +860,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                 type="text"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="e.g., Awake, rested well, greeted nurse cheerfully..."
+                placeholder="e.g., Awake, rested well, baseline stable, greeted nurse cheerfully..."
                 className="w-full text-xs p-3 bg-[#FAF9F6] border border-[#E6E2D3] rounded-2xl text-[#4A4A40] focus:ring-2 focus:ring-[#889E81] focus:outline-none"
               />
             </div>
@@ -632,14 +870,23 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
               <button
                 id="submit-morning-vitals-btn"
                 type="button"
-                disabled={isSubmitting}
+                disabled={isSubmitting || !currentRawPhotoUrl}
                 onClick={handleSave}
-                className="w-full py-3 bg-[#889E81] hover:bg-[#788E71] text-white rounded-full font-bold text-xs shadow-xs flex items-center justify-center space-x-2 transition-all cursor-pointer disabled:opacity-50"
+                className={`w-full py-3 rounded-full font-bold text-xs shadow-xs flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+                  currentRawPhotoUrl
+                    ? 'bg-[#889E81] hover:bg-[#788E71] text-white disabled:opacity-50'
+                    : 'bg-[#E6E2D3] text-[#7C7C6D] cursor-not-allowed'
+                }`}
               >
                 {saveSuccess ? (
                   <>
                     <CheckCircle2 className="w-4 h-4 text-white" />
                     <span>✓ Morning Vitals Stamped &amp; Recorded!</span>
+                  </>
+                ) : !currentRawPhotoUrl ? (
+                  <>
+                    <Camera className="w-4 h-4 text-[#7C7C6D]" />
+                    <span>Photo Required to Save Vitals (Pending Upload)</span>
                   </>
                 ) : (
                   <>

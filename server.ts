@@ -408,46 +408,76 @@ Analyze this message and return:
   // AI Vision: Automatic Vital Signs Photo Extractor (Reads BP, Pulse, SpO2, Temp from monitor photo)
   app.post('/api/vitals/analyze-photo', async (req, res) => {
     try {
-      const { mediaBase64, mediaMimeType, residentFullName, deviceHint } = req.body;
+      const { mediaBase64, mediaUrl, mediaMimeType, residentFullName, deviceHint } = req.body;
 
-      if (!mediaBase64) {
-        return res.status(400).json({ error: 'Image data is required' });
+      const rawInput = mediaBase64 || mediaUrl;
+      if (!rawInput) {
+        return res.status(400).json({ error: 'Image data or URL is required' });
       }
 
-      // Default smart recognition fallback
-      let bloodPressure = '120/80';
-      let pulseRate = 72;
-      let spo2 = 98;
-      let temperature = 36.6;
-      let bloodSugar: number | undefined = undefined;
-      let deviceType = deviceHint || 'Digital Medical Monitor';
-      let status: 'normal' | 'attention_needed' | 'critical' = 'normal';
-      let clinicalNotes = 'Vital sign readings appear within standard physiological limits.';
-      let aiConfidence = 92;
+      // Prepare image base64 & mimeType
+      let cleanBase64 = '';
+      let mimeType = mediaMimeType || 'image/jpeg';
 
-      if (process.env.GEMINI_API_KEY) {
+      if (rawInput.startsWith('http://') || rawInput.startsWith('https://')) {
+        try {
+          const fetchRes = await fetch(rawInput);
+          const arrayBuffer = await fetchRes.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          cleanBase64 = buffer.toString('base64');
+          const contentType = fetchRes.headers.get('content-type');
+          if (contentType) mimeType = contentType;
+        } catch (fetchErr) {
+          console.error('Failed to fetch image URL for AI vision:', fetchErr);
+        }
+      } else if (rawInput.includes('base64,')) {
+        const parts = rawInput.split('base64,');
+        const header = parts[0];
+        cleanBase64 = parts[1];
+        if (header.includes('image/png')) mimeType = 'image/png';
+        else if (header.includes('image/webp')) mimeType = 'image/webp';
+        else mimeType = 'image/jpeg';
+      } else {
+        cleanBase64 = rawInput;
+      }
+
+      // Initial state: STRICTLY EMPTY / NULL (No artificial dummy numbers!)
+      let bloodPressure: string | null = null;
+      let pulseRate: number | null = null;
+      let spo2: number | null = null;
+      let temperature: number | null = null;
+      let bloodSugar: number | null = null;
+      let deviceType: string = deviceHint || 'Vital Signs Monitor';
+      let status: 'normal' | 'attention_needed' | 'critical' = 'normal';
+      let clinicalNotes = 'Awaiting AI vision scan of monitor photo.';
+      let aiConfidence: number | null = null;
+      let isReadable = false;
+
+      if (process.env.GEMINI_API_KEY && cleanBase64) {
         try {
           const ai = getGeminiClient();
-          const cleanBase64 = mediaBase64.includes('base64,')
-            ? mediaBase64.split('base64,')[1]
-            : mediaBase64;
-          const mimeType = mediaMimeType || 'image/jpeg';
 
-          const prompt = `You are a clinical AI medical image reader analyzing a photograph of a medical vital signs monitor display or digital device screen (e.g. digital Blood Pressure cuff display, Pulse Oximeter, Tympanic Thermometer, Bedside Telemetry Monitor, Glucometer).
-Analyze the numbers, units, and waveforms visible on the device screen.
+          const prompt = `You are a clinical AI medical image reader. You are looking at a photograph of a medical vital signs monitor display or digital device screen (e.g., upper arm Blood Pressure monitor, pulse oximeter display, digital thermometer, bedside telemetry station, or blood glucose meter).
 
-Resident: ${residentFullName || 'Senior Living Resident'}
+CRITICAL INSTRUCTION - REAL OCR ONLY:
+- You must strictly read and extract ONLY the exact numerical digits and units visibly displayed on the medical device screen in this photograph.
+- DO NOT hallucinate, assume, or fabricate any numbers.
+- If a reading (such as SpO2, Temperature, or Blood Sugar) is NOT measured or not visible on this specific device screen (e.g., a standard BP monitor that only shows SYS/DIA and PULSE), you MUST leave that field as null.
+- If the photo is not a medical device monitor or the digits are completely blurry/unreadable, return null for all readings, set isReadable to false, and note this in clinicalNotes.
 
-Extract and return JSON:
-1. "bloodPressure": string (e.g. "118/76" if BP systolic/diastolic is visible on screen, or null)
-2. "pulseRate": integer (e.g. 72 for heart rate/pulse in bpm, or null)
-3. "spo2": integer (e.g. 98 for SpO2 oxygen saturation percentage, or null)
-4. "temperature": number (e.g. 36.6 in Celsius, or null)
-5. "bloodSugar": number (e.g. 5.6 mmol/L if blood glucose meter, or null)
-6. "deviceType": string (e.g. "Digital Upper-Arm Blood Pressure Monitor", "Fingertip Pulse Oximeter", "Hospital Telemetry Spot Vital")
-7. "status": "normal" | "attention_needed" | "critical"
-8. "clinicalNotes": concise 1-sentence interpretation for the nursing staff
-9. "aiConfidence": number between 70 and 99`;
+Resident Context: ${residentFullName || 'Resident'}
+
+Extract JSON fields:
+1. "bloodPressure": string (e.g. "124/80" or "118/76" if systolic/diastolic are visible on screen; otherwise null)
+2. "pulseRate": integer (pulse / heart rate in bpm if visible; otherwise null)
+3. "spo2": integer (% oxygen saturation if visible; otherwise null)
+4. "temperature": number (degrees Celsius if visible, e.g. 36.6; otherwise null)
+5. "bloodSugar": number (glucose reading in mmol/L or mg/dL converted to mmol/L if visible; otherwise null)
+6. "deviceType": string (specific name/brand of device recognized, e.g. "Digital Upper-Arm Blood Pressure Monitor", "Fingertip Pulse Oximeter", "Hospital Bedside Telemetry Monitor", "Braun Tympanic Thermometer")
+7. "status": "normal" | "attention_needed" | "critical" (based strictly on whether any visible readings exceed standard clinical limits: e.g. BP > 140/90 or < 90/60, SpO2 < 95%, Temp > 37.5°C)
+8. "clinicalNotes": concise 1-sentence note stating the exact values detected from the screen (e.g. "Screen reads BP 124/80 mmHg and Pulse 72 bpm. Temperature and SpO2 are not displayed on this device.")
+9. "aiConfidence": integer between 0 and 99 reflecting OCR clarity
+10. "isReadable": boolean (true if medical digits were clearly read from screen, false otherwise)`;
 
           const aiRes = await ai.models.generateContent({
             model: 'gemini-3.7-flash',
@@ -470,34 +500,39 @@ Extract and return JSON:
               responseSchema: {
                 type: Type.OBJECT,
                 properties: {
-                  bloodPressure: { type: Type.STRING },
-                  pulseRate: { type: Type.INTEGER },
-                  spo2: { type: Type.INTEGER },
-                  temperature: { type: Type.NUMBER },
-                  bloodSugar: { type: Type.NUMBER },
+                  bloodPressure: { type: Type.STRING, nullable: true },
+                  pulseRate: { type: Type.INTEGER, nullable: true },
+                  spo2: { type: Type.INTEGER, nullable: true },
+                  temperature: { type: Type.NUMBER, nullable: true },
+                  bloodSugar: { type: Type.NUMBER, nullable: true },
                   deviceType: { type: Type.STRING },
                   status: { type: Type.STRING, enum: ['normal', 'attention_needed', 'critical'] },
                   clinicalNotes: { type: Type.STRING },
-                  aiConfidence: { type: Type.INTEGER },
+                  aiConfidence: { type: Type.INTEGER, nullable: true },
+                  isReadable: { type: Type.BOOLEAN },
                 },
-                required: ['deviceType', 'status', 'clinicalNotes', 'aiConfidence'],
+                required: ['deviceType', 'status', 'clinicalNotes', 'isReadable'],
               },
             },
           });
 
           const parsed = JSON.parse(aiRes.text || '{}');
-          if (parsed.bloodPressure) bloodPressure = parsed.bloodPressure;
-          if (parsed.pulseRate) pulseRate = parsed.pulseRate;
-          if (parsed.spo2) spo2 = parsed.spo2;
-          if (parsed.temperature) temperature = parsed.temperature;
-          if (parsed.bloodSugar) bloodSugar = parsed.bloodSugar;
+          bloodPressure = parsed.bloodPressure || null;
+          pulseRate = parsed.pulseRate || null;
+          spo2 = parsed.spo2 || null;
+          temperature = parsed.temperature || null;
+          bloodSugar = parsed.bloodSugar || null;
           if (parsed.deviceType) deviceType = parsed.deviceType;
           if (parsed.status) status = parsed.status;
           if (parsed.clinicalNotes) clinicalNotes = parsed.clinicalNotes;
-          if (parsed.aiConfidence) aiConfidence = parsed.aiConfidence;
+          if (parsed.aiConfidence !== undefined) aiConfidence = parsed.aiConfidence;
+          isReadable = !!parsed.isReadable;
         } catch (aiErr) {
-          console.warn('Gemini vision vital extraction error (using fallback):', aiErr);
+          console.warn('Gemini vision vital extraction error:', aiErr);
+          clinicalNotes = 'AI Vision service encountered an issue processing the monitor image.';
         }
+      } else if (!process.env.GEMINI_API_KEY) {
+        clinicalNotes = 'Gemini API key is not configured. Please enter readings manually or configure server key.';
       }
 
       res.json({
@@ -510,6 +545,7 @@ Extract and return JSON:
         status,
         clinicalNotes,
         aiConfidence,
+        isReadable,
       });
     } catch (err: any) {
       console.error('Error analyzing vitals photo:', err);
