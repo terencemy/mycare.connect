@@ -117,7 +117,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     (m) => m.status === 'responded' || m.status === 'resolved'
   );
 
-  const SUPABASE_SQL_SCHEMA = `-- PostgreSQL & Supabase DDL for CareBridge Family Transparency SaaS
+  const SUPABASE_SQL_SCHEMA = `-- PostgreSQL & Supabase DDL for Care Connect Family Transparency SaaS
 
 -- 1. Enable UUID Extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

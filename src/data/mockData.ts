@@ -5,7 +5,7 @@ export const INITIAL_USERS: UserProfile[] = [
     id: 'user_admin_1',
     name: 'Eleanor Vance, RN',
     role: 'admin',
-    email: 'e.vance@silverpinescare.com',
+    email: 'e.vance@careconnect.com',
     avatarUrl: 'https://images.unsplash.com/photo-1594824813753-433e1448b111?w=150&auto=format&fit=crop&q=80',
     title: 'Director of Nursing & Operations'
   },
@@ -13,7 +13,7 @@ export const INITIAL_USERS: UserProfile[] = [
     id: 'user_care_1',
     name: 'Nurse Sarah Jenkins',
     role: 'caregiver',
-    email: 'sarah.j@silverpinescare.com',
+    email: 'sarah.j@careconnect.com',
     avatarUrl: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=150&auto=format&fit=crop&q=80',
     shift: 'Morning Shift (07:00 - 15:30)',
     title: 'Senior Geriatric Nurse'

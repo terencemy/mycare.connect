@@ -1051,7 +1051,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
 
             <div className="flex items-center justify-between text-xs text-[#7C7C6D] pt-1">
               <span>
-                Verified &amp; Certified under Silver Pines Clinical Protocol.
+                Verified &amp; Certified under Care Connect Clinical Protocol.
               </span>
               <button
                 type="button"

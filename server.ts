@@ -270,7 +270,7 @@ Generate a beautiful, personalized, warm family update and clinical summary now.
       const resident = residents.find((r) => r.id === residentId || r.fullName === residentFullName);
 
       let aiTriageSummary = 'Family inquiry received and queued for administrative review.';
-      let aiSuggestedResponse = `Dear ${familyName}, thank you for contacting Silver Pines Senior Living. We have received your inquiry regarding ${residentFullName} and our administrative nursing team is reviewing the details to provide you with a comprehensive update shortly.`;
+      let aiSuggestedResponse = `Dear ${familyName}, thank you for contacting Care Connect. We have received your inquiry regarding ${residentFullName} and our administrative nursing team is reviewing the details to provide you with a comprehensive update shortly.`;
       let urgency: 'low' | 'normal' | 'high' | 'urgent' = 'normal';
 
       // Perform AI triage if Gemini is available
@@ -584,7 +584,7 @@ Extract JSON fields:
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`CareBridge Server running on http://0.0.0.0:${PORT}`);
+    console.log(`Care Connect Server running on http://0.0.0.0:${PORT}`);
   });
 }
 

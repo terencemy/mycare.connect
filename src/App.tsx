@@ -293,7 +293,7 @@ export default function App() {
       <footer className="bg-[#FAF9F6] border-t border-[#E6E2D3] py-4 text-xs text-[#7C7C6D]">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span className="flex items-center space-x-2">
-            <span className="font-semibold text-[#5A5A40]">CareBridge</span>
+            <span className="font-semibold text-[#5A5A40]">Care Connect</span>
             <span>&bull;</span>
             <span>Family Transparency &amp; Care Communication Protocol</span>
           </span>

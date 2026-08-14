@@ -1,5 +1,5 @@
 {
-  "name": "CareBridge - Family Transparency & Care SaaS",
+  "name": "Care Connect - Family Transparency & Care SaaS",
   "description": "SaaS platform for nursing homes and care centers featuring pre-7 AM timestamp-watermarked vital sign photo captures, one-click media uploads, resident tagging, AI-generated warm family updates, and admin-intercepted family communications.",
   "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

@@ -85,10 +85,10 @@ export async function applyVitalsWatermark(
       const titleFontSize = Math.max(width * 0.024, 15);
       const paddingX = Math.max(width * 0.03, 20);
 
-      // 1. Header line: Facility & Protocol Badge
+      // 1. Header line: Protocol Badge
       ctx.font = `bold ${titleFontSize}px sans-serif`;
       ctx.fillStyle = '#FAF9F6';
-      ctx.fillText(`SILVER PINES SENIOR LIVING • CLINICAL VITALS AUDIT`, paddingX, ribbonY + baseFontSize * 1.6);
+      ctx.fillText(`CARE CONNECT • CLINICAL VITALS AUDIT`, paddingX, ribbonY + baseFontSize * 1.6);
 
       // Badge on top-right of ribbon
       const badgeText = isPre7am

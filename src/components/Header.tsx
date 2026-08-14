@@ -27,10 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <span className="font-serif text-2xl font-semibold tracking-tight text-[#5A5A40]">
-                  CareBridge
-                </span>
-                <span className="text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-[#F0ECE2] text-[#5A5A40] border border-[#E6E2D3]">
-                  Silver Pines Living
+                  Care Connect
                 </span>
               </div>
               <p className="text-xs text-[#7C7C6D] hidden sm:block">
