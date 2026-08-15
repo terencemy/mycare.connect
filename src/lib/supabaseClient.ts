@@ -72,15 +72,55 @@ export const supabaseRowToResident = (row: any): Resident => {
 };
 
 /**
- * Upserts a single resident directly to Supabase
+ * Helper to safely upsert rows into Supabase with automatic schema-cache column fallback.
+ * If a column like 'admission_date' is missing in the user's PostgreSQL schema,
+ * it automatically strips the missing field and retries the upsert seamlessly.
+ */
+const safeUpsertResidentsTable = async (
+  rows: any[],
+  maxRetries = 3
+): Promise<{ data: any; error: any }> => {
+  let currentRows = rows.map((r) => ({ ...r }));
+  let attempt = 0;
+
+  while (attempt <= maxRetries) {
+    const { data, error } = await supabase
+      .from('residents')
+      .upsert(currentRows, { onConflict: 'id' })
+      .select();
+
+    if (!error) {
+      return { data, error: null };
+    }
+
+    // Check if the error is due to a missing column in Supabase's schema cache
+    const match = error.message.match(/Could not find the '([^']+)' column/i);
+    if (match && match[1]) {
+      const missingCol = match[1];
+      console.warn(`[Supabase Auto-Heal] Column '${missingCol}' not found in Supabase schema. Stripping column and retrying upsert...`);
+      currentRows = currentRows.map((r) => {
+        const copy = { ...r };
+        delete copy[missingCol];
+        return copy;
+      });
+      attempt++;
+      continue;
+    }
+
+    // Non-column error or retries exhausted
+    return { data: null, error };
+  }
+
+  return { data: null, error: { message: 'Max schema retry attempts exceeded' } };
+};
+
+/**
+ * Upserts a single resident directly to Supabase with auto-fallback
  */
 export const syncResidentToSupabase = async (resident: Resident): Promise<{ success: boolean; data?: any; error?: string }> => {
   try {
     const row = residentToSupabaseRow(resident);
-    const { data, error } = await supabase
-      .from('residents')
-      .upsert([row], { onConflict: 'id' })
-      .select();
+    const { data, error } = await safeUpsertResidentsTable([row]);
 
     if (error) {
       console.warn('Supabase upsert note:', error.message);
@@ -94,7 +134,7 @@ export const syncResidentToSupabase = async (resident: Resident): Promise<{ succ
 };
 
 /**
- * Updates a resident in Supabase
+ * Updates a resident in Supabase with auto-fallback for missing columns
  */
 export const updateResidentInSupabase = async (
   residentId: string,
@@ -115,18 +155,35 @@ export const updateResidentInSupabase = async (
     if (updates.familyContactEmail !== undefined) rowUpdates.family_contact_email = updates.familyContactEmail;
     if (updates.familyContactPhone !== undefined) rowUpdates.family_contact_phone = updates.familyContactPhone;
     if (updates.photoUrl !== undefined) rowUpdates.photo_url = updates.photoUrl;
+    if (updates.admissionDate !== undefined) rowUpdates.admission_date = updates.admissionDate;
 
-    const { data, error } = await supabase
-      .from('residents')
-      .update(rowUpdates)
-      .eq('id', residentId)
-      .select();
+    let currentUpdates = { ...rowUpdates };
+    let attempt = 0;
 
-    if (error) {
+    while (attempt <= 3) {
+      const { data, error } = await supabase
+        .from('residents')
+        .update(currentUpdates)
+        .eq('id', residentId)
+        .select();
+
+      if (!error) {
+        return { success: true, data };
+      }
+
+      const match = error.message.match(/Could not find the '([^']+)' column/i);
+      if (match && match[1]) {
+        const missingCol = match[1];
+        delete currentUpdates[missingCol];
+        attempt++;
+        continue;
+      }
+
       console.warn('Supabase update note:', error.message);
       return { success: false, error: error.message };
     }
-    return { success: true, data };
+
+    return { success: false, error: 'Update failed after schema retries' };
   } catch (err: any) {
     console.warn('Supabase update network error:', err);
     return { success: false, error: err?.message || 'Network error' };
@@ -159,17 +216,14 @@ export const fetchResidentsFromSupabase = async (): Promise<{ success: boolean; 
 };
 
 /**
- * Bulk syncs all resident records to Supabase
+ * Bulk syncs all resident records to Supabase with auto-fallback
  */
 export const syncAllResidentsToSupabase = async (
   residentsList: Resident[]
 ): Promise<{ success: boolean; count: number; error?: string }> => {
   try {
     const rows = residentsList.map((r) => residentToSupabaseRow(r));
-    const { data, error } = await supabase
-      .from('residents')
-      .upsert(rows, { onConflict: 'id' })
-      .select();
+    const { data, error } = await safeUpsertResidentsTable(rows);
 
     if (error) {
       return { success: false, count: 0, error: error.message };

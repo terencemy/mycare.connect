@@ -301,6 +301,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     (m) => m.status === 'responded' || m.status === 'resolved'
   );
 
+  const SUPABASE_MIGRATION_SQL = `-- Quick Schema Fix / Migration (Run this if you get 'column not found' or schema cache error)
+ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS admission_date DATE DEFAULT CURRENT_DATE;
+ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS photo_url TEXT;
+ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS medical_notes TEXT;
+ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS care_plan JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS dietary_restrictions TEXT DEFAULT 'Standard balanced diet';
+ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS assigned_caregiver_name TEXT DEFAULT 'Caregiver Staff';
+ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS family_contact_name TEXT DEFAULT 'Primary Contact';
+ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS family_contact_relation TEXT DEFAULT 'Family Member';
+ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS family_contact_email TEXT;
+ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS family_contact_phone TEXT;
+
+-- Reload PostgREST schema cache
+NOTIFY pgrst, 'reload schema';`;
+
+  const [copiedMigrationSql, setCopiedMigrationSql] = useState(false);
+
   const SUPABASE_SQL_SCHEMA = `-- PostgreSQL & Supabase DDL for Care Connect Family Transparency SaaS
 
 -- 1. Enable UUID Extension
@@ -970,11 +987,17 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <img
-                        src={r.photoUrl}
-                        alt={r.fullName}
-                        className="w-12 h-12 rounded-full object-cover ring-2 ring-[#E6E2D3]"
-                      />
+                      <div className="w-11 h-11 rounded-full bg-[#EBF1EA] text-[#5A5A40] font-bold text-xs flex items-center justify-center ring-2 ring-[#E6E2D3] shrink-0">
+                        {r.fullName
+                          ? r.fullName
+                              .split(' ')
+                              .filter(Boolean)
+                              .map((n) => n[0])
+                              .slice(0, 2)
+                              .join('')
+                              .toUpperCase()
+                          : 'R'}
+                      </div>
                       <div>
                         <h4 className="text-xs font-bold text-[#5A5A40]">
                           {r.fullName}
@@ -1108,6 +1131,38 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
             )}
           </div>
 
+          {/* Quick Fix / Schema Cache Migration Box */}
+          <div className="bg-white rounded-[24px] border border-[#889E81]/30 p-6 shadow-xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-serif font-bold text-[#5A5A40] flex items-center space-x-2">
+                  <Sparkles className="w-4 h-4 text-[#889E81]" />
+                  <span>Quick Fix Migration (For Existing Supabase Tables)</span>
+                </h3>
+                <p className="text-xs text-[#7C7C6D]">
+                  If your table was already created and you see a column notice like <code className="text-[#5A5A40] bg-[#F0ECE2] px-1 py-0.5 rounded font-mono">admission_date</code>, run this snippet to add any missing columns and refresh PostgREST:
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(SUPABASE_MIGRATION_SQL);
+                  setCopiedMigrationSql(true);
+                  setTimeout(() => setCopiedMigrationSql(false), 2000);
+                }}
+                className="px-3.5 py-2 bg-[#889E81] hover:bg-[#778E70] text-white rounded-full text-xs font-semibold flex items-center space-x-1.5 shadow-xs transition-colors cursor-pointer self-start sm:self-auto shrink-0"
+              >
+                {copiedMigrationSql ? <Check className="w-3.5 h-3.5" /> : <FileCode className="w-3.5 h-3.5" />}
+                <span>{copiedMigrationSql ? 'Copied Migration SQL!' : 'Copy Migration SQL'}</span>
+              </button>
+            </div>
+
+            <pre className="bg-[#FAF9F6] text-[#2D2D24] p-3.5 rounded-xl text-xs font-mono overflow-x-auto leading-relaxed border border-[#E6E2D3]">
+              {SUPABASE_MIGRATION_SQL}
+            </pre>
+          </div>
+
           {/* Schema Box */}
           <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-6 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
@@ -1128,7 +1183,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                   setCopiedSql(true);
                   setTimeout(() => setCopiedSql(false), 2000);
                 }}
-                className="px-3.5 py-2 bg-[#F0ECE2] hover:bg-[#E6E2D3] text-[#5A5A40] rounded-full text-xs font-semibold flex items-center space-x-1.5 border border-[#E6E2D3] cursor-pointer"
+                className="px-3.5 py-2 bg-[#F0ECE2] hover:bg-[#E6E2D3] text-[#5A5A40] rounded-full text-xs font-semibold flex items-center space-x-1.5 border border-[#E6E2D3] cursor-pointer shrink-0"
               >
                 {copiedSql ? <Check className="w-3.5 h-3.5 text-[#889E81]" /> : <FileCode className="w-3.5 h-3.5" />}
                 <span>{copiedSql ? 'Copied SQL!' : 'Copy SQL Script'}</span>

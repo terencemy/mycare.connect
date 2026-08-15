@@ -80,6 +80,40 @@ function getGeminiClient(): GoogleGenAI {
   return genAiClient;
 }
 
+// Safe upsert helper with schema cache fallback
+async function safeUpsertResidentsServer(rows: any[]): Promise<{ data: any; error: any }> {
+  let currentRows = rows.map((r) => ({ ...r }));
+  let attempt = 0;
+
+  while (attempt <= 3) {
+    const { data, error } = await supabaseServer
+      .from('residents')
+      .upsert(currentRows, { onConflict: 'id' })
+      .select();
+
+    if (!error) {
+      return { data, error: null };
+    }
+
+    const match = error.message.match(/Could not find the '([^']+)' column/i);
+    if (match && match[1]) {
+      const missingCol = match[1];
+      console.warn(`[Supabase Server Auto-Heal] Column '${missingCol}' missing in DB schema. Stripping and retrying...`);
+      currentRows = currentRows.map((r) => {
+        const copy = { ...r };
+        delete copy[missingCol];
+        return copy;
+      });
+      attempt++;
+      continue;
+    }
+
+    return { data: null, error };
+  }
+
+  return { data: null, error: { message: 'Max schema retry attempts reached' } };
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -146,7 +180,7 @@ async function startServer() {
     // Asynchronously upsert to Supabase
     try {
       const dbRow = residentToDbRow(newResident);
-      const { error } = await supabaseServer.from('residents').upsert([dbRow], { onConflict: 'id' });
+      const { error } = await safeUpsertResidentsServer([dbRow]);
       if (error) {
         console.warn('Supabase save note:', error.message);
       }
@@ -168,7 +202,7 @@ async function startServer() {
     // Asynchronously update in Supabase
     try {
       const dbRow = residentToDbRow(updatedResident);
-      await supabaseServer.from('residents').upsert([dbRow], { onConflict: 'id' });
+      await safeUpsertResidentsServer([dbRow]);
     } catch (e) {
       console.warn('Supabase update error:', e);
     }
@@ -180,10 +214,7 @@ async function startServer() {
   app.post('/api/residents/sync-supabase', async (req, res) => {
     try {
       const rows = residents.map(residentToDbRow);
-      const { data, error } = await supabaseServer
-        .from('residents')
-        .upsert(rows, { onConflict: 'id' })
-        .select();
+      const { data, error } = await safeUpsertResidentsServer(rows);
 
       if (error) {
         return res.status(400).json({ success: false, error: error.message });
