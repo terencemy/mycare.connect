@@ -5,7 +5,7 @@ export interface UserProfile {
   name: string;
   role: UserRole;
   email: string;
-  avatarUrl: string;
+  avatarUrl?: string;
   residentId?: string; // If family, linked resident
   shift?: string; // If caregiver
   title?: string;

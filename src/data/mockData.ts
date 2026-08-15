@@ -6,7 +6,6 @@ export const INITIAL_USERS: UserProfile[] = [
     name: 'Administrator',
     role: 'admin',
     email: 'admin@careconnect.com',
-    avatarUrl: 'https://images.unsplash.com/photo-1594824813753-433e1448b111?w=150&auto=format&fit=crop&q=80',
     title: 'Operations & Care Director'
   },
   {
@@ -14,7 +13,6 @@ export const INITIAL_USERS: UserProfile[] = [
     name: 'Caregiver',
     role: 'caregiver',
     email: 'caregiver@careconnect.com',
-    avatarUrl: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=150&auto=format&fit=crop&q=80',
     shift: 'Morning Shift (07:00 - 15:30)',
     title: 'Caregiver / Nurse'
   },
@@ -23,7 +21,6 @@ export const INITIAL_USERS: UserProfile[] = [
     name: 'Family Member',
     role: 'family',
     email: 'family@careconnect.com',
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
     residentId: '',
     title: 'Family Contact / Next of Kin'
   }

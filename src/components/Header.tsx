@@ -64,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <div className="w-2 h-2 rounded-full bg-[#889E81]"></div>
-              <span>Caregiver (Nurse)</span>
+              <span>Caregiver / Nurse</span>
             </button>
 
             <button
@@ -77,7 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <Users className="w-3.5 h-3.5 text-[#889E81]" />
-              <span>Family Portal</span>
+              <span>Family</span>
             </button>
 
             <button
@@ -90,7 +90,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <ShieldCheck className="w-3.5 h-3.5 text-[#889E81]" />
-              <span>Admin Interception</span>
+              <span>Admin</span>
               {pendingInquiriesCount > 0 && (
                 <span className="w-4 h-4 rounded-full bg-[#C27D60] text-white text-[10px] flex items-center justify-center font-bold">
                   {pendingInquiriesCount}
@@ -151,18 +151,26 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             )}
             <div className="relative">
-              <img
-                src={currentUser.avatarUrl}
-                alt={currentUser.name}
-                className="w-10 h-10 rounded-full object-cover ring-2 ring-[#889E81]/30 border border-white cursor-pointer"
+              <div
                 onClick={() => onUpdateUserName && setIsEditingName(!isEditingName)}
                 title="Click to edit name"
-              />
+                className="w-10 h-10 rounded-full bg-[#EBF1EA] text-[#5A5A40] font-bold text-xs flex items-center justify-center ring-2 ring-[#889E81]/30 border border-white cursor-pointer select-none hover:bg-[#DDE7DC] transition-colors"
+              >
+                {currentUser.name
+                  ? currentUser.name
+                      .split(' ')
+                      .filter(Boolean)
+                      .map((n) => n[0])
+                      .slice(0, 2)
+                      .join('')
+                      .toUpperCase()
+                  : currentUser.role.charAt(0).toUpperCase()}
+              </div>
               {onUpdateUserName && (
                 <button
                   type="button"
                   onClick={() => setIsEditingName(!isEditingName)}
-                  title="Edit Caregiver Name"
+                  title="Edit Name"
                   className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#889E81] text-white rounded-full flex items-center justify-center shadow-xs border border-white cursor-pointer sm:hidden"
                 >
                   <Edit2 className="w-2.5 h-2.5" />

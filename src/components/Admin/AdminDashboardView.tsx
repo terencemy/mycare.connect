@@ -389,7 +389,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
   return (
     <div className="space-y-6">
       {/* Top Banner & Metric Counters */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-[24px] border border-[#E6E2D3] shadow-xs flex items-center space-x-3">
           <div className="w-10 h-10 rounded-2xl bg-[#F0ECE2] text-[#5A5A40] flex items-center justify-center font-bold shrink-0 border border-[#E6E2D3]">
             <ShieldAlert className="w-5 h-5 text-[#889E81]" />
@@ -416,23 +416,11 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
 
         <div className="bg-white p-4 rounded-[24px] border border-[#E6E2D3] shadow-xs flex items-center space-x-3">
           <div className="w-10 h-10 rounded-2xl bg-[#FAF9F6] text-[#5A5A40] flex items-center justify-center font-bold shrink-0 border border-[#E6E2D3]">
-            <Clock className="w-5 h-5 text-[#889E81]" />
+            <Bed className="w-5 h-5 text-[#889E81]" />
           </div>
           <div>
-            <div className="text-xl font-serif font-bold text-[#5A5A40]">
-              {Math.round(careLogs.length * 8.5)} mins
-            </div>
-            <div className="text-xs text-[#7C7C6D] font-medium">Nurse Typing Time Saved</div>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-[24px] border border-[#E6E2D3] shadow-xs flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#EBF1EA] text-[#5A5A40] flex items-center justify-center font-bold shrink-0 border border-[#889E81]/30">
-            <ShieldCheck className="w-5 h-5 text-[#889E81]" />
-          </div>
-          <div>
-            <div className="text-xl font-serif font-bold text-[#5A5A40]">100%</div>
-            <div className="text-xs text-[#7C7C6D] font-medium">Frontline Staff Shielded</div>
+            <div className="text-xl font-serif font-bold text-[#5A5A40]">{residents.length}</div>
+            <div className="text-xs text-[#7C7C6D] font-medium">Active Residents Registered</div>
           </div>
         </div>
       </div>
