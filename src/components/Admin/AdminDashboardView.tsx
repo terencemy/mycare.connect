@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { supabase, SUPABASE_URL } from '../../lib/supabaseClient';
 import {
   Resident,
   CareLog,
@@ -26,6 +27,9 @@ import {
   Search,
   ZoomIn,
   Activity,
+  Globe,
+  Key,
+  RefreshCw,
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -55,6 +59,36 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [responseDraft, setResponseDraft] = useState('');
   const [isSendingResponse, setIsSendingResponse] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
+  const [supabaseTestStatus, setSupabaseTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [supabaseTestMsg, setSupabaseTestMsg] = useState<string>('');
+
+  const handleTestSupabase = async () => {
+    try {
+      setSupabaseTestStatus('testing');
+      setSupabaseTestMsg('Pinging Supabase REST API & verifying connection...');
+      
+      const startTime = performance.now();
+      const { data, error } = await supabase.from('residents').select('id, full_name, room_number').limit(5);
+      const elapsed = Math.round(performance.now() - startTime);
+
+      if (error) {
+        // If table doesn't exist yet, it's still connected to the Supabase endpoint
+        if (error.code === '42P01' || error.message.includes('relation') || error.message.includes('does not exist')) {
+          setSupabaseTestStatus('success');
+          setSupabaseTestMsg(`Connected to Supabase endpoint (${elapsed}ms)! Note: The "residents" table has not been created yet. Run the SQL schema script below to initialize tables.`);
+        } else {
+          setSupabaseTestStatus('error');
+          setSupabaseTestMsg(`Supabase Error (${error.code || 'API'}): ${error.message}`);
+        }
+      } else {
+        setSupabaseTestStatus('success');
+        setSupabaseTestMsg(`Live connection verified (${elapsed}ms)! Found ${data?.length || 0} residents in Supabase database.`);
+      }
+    } catch (err: any) {
+      setSupabaseTestStatus('error');
+      setSupabaseTestMsg(`Connection failed: ${err?.message || 'Network error connecting to Supabase.'}`);
+    }
+  };
 
   // New Resident Form Modal
   const [isAddResidentModalOpen, setIsAddResidentModalOpen] = useState(false);
@@ -664,35 +698,113 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
 
       {/* TAB 3: SUPABASE / POSTGRESQL SCHEMA */}
       {activeTab === 'supabase_schema' && (
-        <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-6 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-serif font-bold text-[#5A5A40] flex items-center space-x-2">
-                <Database className="w-4 h-4 text-[#889E81]" />
-                <span>Supabase PostgreSQL Schema &amp; Security Definitions</span>
-              </h3>
-              <p className="text-xs text-[#7C7C6D]">
-                Production-ready database tables with Row Level Security (RLS) policies for GitHub &amp; Render deployment.
-              </p>
+        <div className="space-y-4">
+          {/* Active Supabase Connection Card */}
+          <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F0ECE2] pb-4">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-sm font-serif font-bold text-[#5A5A40] flex items-center space-x-2">
+                    <Database className="w-4 h-4 text-[#889E81]" />
+                    <span>Supabase Backend Integration</span>
+                  </h3>
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-[#EBF1EA] text-[#5A5A40] border border-[#889E81]/30">
+                    Live REST Client Configured
+                  </span>
+                </div>
+                <p className="text-xs text-[#7C7C6D] mt-0.5">
+                  Connected to your Supabase PostgreSQL project with auto-normalized REST endpoint.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleTestSupabase}
+                disabled={supabaseTestStatus === 'testing'}
+                className="px-4 py-2 bg-[#889E81] hover:bg-[#778E70] text-white rounded-full text-xs font-semibold flex items-center space-x-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-50 self-start sm:self-auto"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${supabaseTestStatus === 'testing' ? 'animate-spin' : ''}`} />
+                <span>{supabaseTestStatus === 'testing' ? 'Testing Ping...' : 'Test Supabase Connection'}</span>
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
-                setCopiedSql(true);
-                setTimeout(() => setCopiedSql(false), 2000);
-              }}
-              className="px-3.5 py-2 bg-[#F0ECE2] hover:bg-[#E6E2D3] text-[#5A5A40] rounded-full text-xs font-semibold flex items-center space-x-1.5 border border-[#E6E2D3] cursor-pointer"
-            >
-              {copiedSql ? <Check className="w-3.5 h-3.5 text-[#889E81]" /> : <FileCode className="w-3.5 h-3.5" />}
-              <span>{copiedSql ? 'Copied SQL!' : 'Copy SQL Script'}</span>
-            </button>
+            {/* Configured Details Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 bg-[#FAF9F6] rounded-xl border border-[#E6E2D3] space-y-1">
+                <div className="flex items-center space-x-1.5 text-[#7C7C6D] font-bold">
+                  <Globe className="w-3.5 h-3.5 text-[#889E81]" />
+                  <span>PROJECT URL</span>
+                </div>
+                <div className="font-mono text-[#2C332A] truncate select-all">
+                  {SUPABASE_URL}
+                </div>
+              </div>
+
+              <div className="p-3 bg-[#FAF9F6] rounded-xl border border-[#E6E2D3] space-y-1">
+                <div className="flex items-center space-x-1.5 text-[#7C7C6D] font-bold">
+                  <Key className="w-3.5 h-3.5 text-[#889E81]" />
+                  <span>ANON PUBLIC KEY</span>
+                </div>
+                <div className="font-mono text-[#7C7C6D] truncate">
+                  eyJhbGciOiJIUzI1NiI...QVsaek <span className="text-[10px] text-[#889E81] font-semibold">(Configured)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Test Status Message */}
+            {supabaseTestMsg && (
+              <div
+                className={`p-3.5 rounded-xl text-xs flex items-start space-x-2 border ${
+                  supabaseTestStatus === 'success'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : supabaseTestStatus === 'error'
+                    ? 'bg-red-50 border-red-200 text-red-800'
+                    : 'bg-[#F0ECE2] border-[#E6E2D3] text-[#5A5A40]'
+                }`}
+              >
+                {supabaseTestStatus === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                ) : supabaseTestStatus === 'error' ? (
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                ) : (
+                  <Clock className="w-4 h-4 text-[#889E81] shrink-0 mt-0.5 animate-spin" />
+                )}
+                <span>{supabaseTestMsg}</span>
+              </div>
+            )}
           </div>
 
-          <pre className="bg-[#2D2D24] text-[#FAF9F6] p-4 rounded-2xl text-xs font-mono overflow-x-auto leading-relaxed max-h-[500px] border border-[#E6E2D3]">
-            {SUPABASE_SQL_SCHEMA}
-          </pre>
+          {/* Schema Box */}
+          <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-serif font-bold text-[#5A5A40] flex items-center space-x-2">
+                  <Database className="w-4 h-4 text-[#889E81]" />
+                  <span>Supabase PostgreSQL Schema &amp; Security Definitions</span>
+                </h3>
+                <p className="text-xs text-[#7C7C6D]">
+                  Execute this SQL in your Supabase SQL Editor to initialize the <code className="text-[#889E81]">residents</code>, <code className="text-[#889E81]">caregivers</code>, and <code className="text-[#889E81]">care_logs</code> tables.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
+                  setCopiedSql(true);
+                  setTimeout(() => setCopiedSql(false), 2000);
+                }}
+                className="px-3.5 py-2 bg-[#F0ECE2] hover:bg-[#E6E2D3] text-[#5A5A40] rounded-full text-xs font-semibold flex items-center space-x-1.5 border border-[#E6E2D3] cursor-pointer"
+              >
+                {copiedSql ? <Check className="w-3.5 h-3.5 text-[#889E81]" /> : <FileCode className="w-3.5 h-3.5" />}
+                <span>{copiedSql ? 'Copied SQL!' : 'Copy SQL Script'}</span>
+              </button>
+            </div>
+
+            <pre className="bg-[#2D2D24] text-[#FAF9F6] p-4 rounded-2xl text-xs font-mono overflow-x-auto leading-relaxed max-h-[500px] border border-[#E6E2D3]">
+              {SUPABASE_SQL_SCHEMA}
+            </pre>
+          </div>
         </div>
       )}
 
