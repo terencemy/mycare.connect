@@ -40,6 +40,7 @@ interface AdminDashboardViewProps {
   morningVitals?: MorningVitalsRecord[];
   onRespondMessage: (msgId: string, responseText: string) => Promise<void>;
   onAddResident: (res: Partial<Resident>) => Promise<void>;
+  onUpdateResident?: (residentId: string, updatedFields: Partial<Resident>) => Promise<void>;
 }
 
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
@@ -50,6 +51,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   morningVitals = [],
   onRespondMessage,
   onAddResident,
+  onUpdateResident,
 }) => {
   const [activeTab, setActiveTab] = useState<'triage' | 'vitals_audit' | 'residents' | 'analytics' | 'supabase_schema'>('triage');
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<string | null>(null);
@@ -61,6 +63,25 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [copiedSql, setCopiedSql] = useState(false);
   const [supabaseTestStatus, setSupabaseTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [supabaseTestMsg, setSupabaseTestMsg] = useState<string>('');
+
+  // Inline Editing in Interception & Triage Pane
+  const [isEditingInterceptionTarget, setIsEditingInterceptionTarget] = useState(false);
+  const [editInterceptionResidentName, setEditInterceptionResidentName] = useState('');
+  const [editInterceptionRoom, setEditInterceptionRoom] = useState('');
+  const [editInterceptionBed, setEditInterceptionBed] = useState('Bed A');
+  const [isSavingInterceptionEdit, setIsSavingInterceptionEdit] = useState(false);
+
+  // Edit Resident Modal in Directory
+  const [editingResident, setEditingResident] = useState<Resident | null>(null);
+  const [editFullName, setEditFullName] = useState('');
+  const [editPreferredName, setEditPreferredName] = useState('');
+  const [editRoomNumber, setEditRoomNumber] = useState('');
+  const [editBedNumber, setEditBedNumber] = useState('Bed A');
+  const [editAge, setEditAge] = useState(80);
+  const [editDiet, setEditDiet] = useState('');
+  const [editCaregiverName, setEditCaregiverName] = useState('');
+  const [editFamilyName, setEditFamilyName] = useState('');
+  const [editFamilyEmail, setEditFamilyEmail] = useState('');
 
   const handleTestSupabase = async () => {
     try {
@@ -106,6 +127,81 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const handleSelectMessage = (msg: FamilyMessage) => {
     setSelectedMessage(msg);
     setResponseDraft(msg.adminResponse || msg.aiSuggestedResponse || '');
+    setIsEditingInterceptionTarget(false);
+  };
+
+  const handleStartInterceptionEdit = () => {
+    if (!selectedMessage) return;
+    setEditInterceptionResidentName(selectedMessage.residentFullName);
+    setEditInterceptionRoom(selectedMessage.roomNumber);
+    setEditInterceptionBed(selectedMessage.bedNumber || 'Bed A');
+    setIsEditingInterceptionTarget(true);
+  };
+
+  const handleSaveInterceptionResidentEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMessage || !editInterceptionResidentName.trim()) return;
+    setIsSavingInterceptionEdit(true);
+
+    try {
+      if (onUpdateResident && selectedMessage.residentId) {
+        await onUpdateResident(selectedMessage.residentId, {
+          fullName: editInterceptionResidentName.trim(),
+          roomNumber: editInterceptionRoom.trim() || selectedMessage.roomNumber,
+          bedNumber: editInterceptionBed.trim() || selectedMessage.bedNumber,
+        });
+      }
+
+      // Also update local selectedMessage in place
+      setSelectedMessage((prev) =>
+        prev
+          ? {
+              ...prev,
+              residentFullName: editInterceptionResidentName.trim(),
+              roomNumber: editInterceptionRoom.trim() || prev.roomNumber,
+              bedNumber: editInterceptionBed.trim() || prev.bedNumber,
+            }
+          : prev
+      );
+      setIsEditingInterceptionTarget(false);
+    } catch (err) {
+      console.error('Failed to update resident in interception:', err);
+    } finally {
+      setIsSavingInterceptionEdit(false);
+    }
+  };
+
+  const handleOpenEditResidentModal = (r: Resident) => {
+    setEditingResident(r);
+    setEditFullName(r.fullName);
+    setEditPreferredName(r.preferredName || '');
+    setEditRoomNumber(r.roomNumber);
+    setEditBedNumber(r.bedNumber || 'Bed A');
+    setEditAge(r.age || 80);
+    setEditDiet(r.dietaryRestrictions || '');
+    setEditCaregiverName(r.assignedCaregiverName || '');
+    setEditFamilyName(r.familyContactName || '');
+    setEditFamilyEmail(r.familyContactEmail || '');
+  };
+
+  const handleSaveResidentModal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingResident || !editFullName.trim() || !editRoomNumber.trim()) return;
+
+    if (onUpdateResident) {
+      await onUpdateResident(editingResident.id, {
+        fullName: editFullName.trim(),
+        preferredName: editPreferredName.trim() || editFullName.trim().split(' ')[0],
+        roomNumber: editRoomNumber.trim(),
+        bedNumber: editBedNumber.trim(),
+        age: editAge,
+        dietaryRestrictions: editDiet,
+        assignedCaregiverName: editCaregiverName || 'Caregiver Staff',
+        familyContactName: editFamilyName || 'Family Member',
+        familyContactEmail: editFamilyEmail,
+      });
+    }
+    setEditingResident(null);
   };
 
   const handleSendAdminResponse = async () => {
@@ -525,9 +621,9 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
           <div className="lg:col-span-7">
             {selectedMessage ? (
               <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-6 shadow-xs space-y-5">
-                {/* Header of message */}
-                <div className="flex items-start justify-between border-b border-[#E6E2D3] pb-4">
-                  <div>
+                {/* Header of message with Editable Resident & Bed Register in Interception */}
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between border-b border-[#E6E2D3] pb-4 gap-3">
+                  <div className="flex-1">
                     <div className="flex items-center space-x-2">
                       <span className="text-base font-serif font-bold text-[#5A5A40]">
                         {selectedMessage.subject}
@@ -537,8 +633,94 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
                       </span>
                     </div>
                     <p className="text-xs text-[#7C7C6D] mt-1">
-                      From: <strong className="text-[#5A5A40]">{selectedMessage.familyName}</strong> ({selectedMessage.familyRelation}) &bull; For Resident: <strong className="text-[#5A5A40]">{selectedMessage.residentFullName}</strong> (Room {selectedMessage.roomNumber}, {selectedMessage.bedNumber})
+                      From: <strong className="text-[#5A5A40]">{selectedMessage.familyName}</strong> ({selectedMessage.familyRelation})
                     </p>
+
+                    {/* Resident & Bed Register Tag - Editable */}
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                      {isEditingInterceptionTarget ? (
+                        <form
+                          onSubmit={handleSaveInterceptionResidentEdit}
+                          className="flex flex-wrap items-center gap-1.5 p-2 bg-[#FAF9F6] rounded-xl border border-[#889E81] w-full"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-bold text-[#7C7C6D]">Resident Name:</span>
+                            <input
+                              type="text"
+                              value={editInterceptionResidentName}
+                              onChange={(e) => setEditInterceptionResidentName(e.target.value)}
+                              placeholder="Resident Name"
+                              className="px-2 py-1 text-xs font-bold text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-lg outline-none w-36"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-bold text-[#7C7C6D]">Room:</span>
+                            <input
+                              type="text"
+                              value={editInterceptionRoom}
+                              onChange={(e) => setEditInterceptionRoom(e.target.value)}
+                              placeholder="Room #"
+                              className="px-2 py-1 text-xs font-medium text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-lg outline-none w-16"
+                            />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-bold text-[#7C7C6D]">Bed Register:</span>
+                            <select
+                              value={editInterceptionBed}
+                              onChange={(e) => setEditInterceptionBed(e.target.value)}
+                              className="px-2 py-1 text-xs font-medium text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-lg outline-none"
+                            >
+                              <option value="Bed A">Bed A</option>
+                              <option value="Bed B">Bed B</option>
+                              <option value="Bed C">Bed C</option>
+                              <option value="Bed D">Bed D</option>
+                              <option value="Private Suite">Private Suite</option>
+                            </select>
+                          </div>
+                          <div className="flex items-end space-x-1 pt-3.5">
+                            <button
+                              type="submit"
+                              disabled={isSavingInterceptionEdit}
+                              title="Save Changes"
+                              className="px-2.5 py-1 bg-[#889E81] text-white rounded-lg text-xs font-bold hover:bg-[#788E71] flex items-center space-x-1 cursor-pointer"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>{isSavingInterceptionEdit ? 'Saving...' : 'Save'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingInterceptionTarget(false)}
+                              title="Cancel"
+                              className="p-1 bg-[#F0ECE2] text-[#7C7C6D] rounded-lg hover:bg-[#E6E2D3] cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 hidden" />
+                              <span className="text-xs px-1">✕</span>
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className="inline-flex items-center space-x-2 bg-[#FAF9F6] border border-[#E6E2D3] px-3 py-1.5 rounded-xl">
+                          <div className="flex items-center space-x-1.5 text-xs">
+                            <span className="text-[#8C8C7E]">Resident:</span>
+                            <strong className="text-[#5A5A40] font-bold">{selectedMessage.residentFullName}</strong>
+                            <span className="text-[#8C8C7E]">&bull;</span>
+                            <span className="text-[11px] font-bold text-[#5A5A40] bg-[#F0ECE2] px-2 py-0.5 rounded-md border border-[#E6E2D3]">
+                              Room {selectedMessage.roomNumber} &bull; {selectedMessage.bedNumber || 'Bed A'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleStartInterceptionEdit}
+                            title="Edit Resident Name & Bed Register"
+                            className="p-1 text-[#889E81] hover:text-[#5A5A40] hover:bg-[#E6E2D3]/60 rounded-md transition-colors cursor-pointer flex items-center space-x-1 text-[11px] font-bold"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                            <span>Edit Target</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -675,22 +857,33 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
               {residents.map((r) => (
                 <div
                   key={r.id}
-                  className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-3"
+                  className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-3 relative group"
                 >
-                  <div className="flex items-center space-x-3">
-                    <img
-                      src={r.photoUrl}
-                      alt={r.fullName}
-                      className="w-12 h-12 rounded-full object-cover ring-2 ring-[#E6E2D3]"
-                    />
-                    <div>
-                      <h4 className="text-xs font-bold text-[#5A5A40]">
-                        {r.fullName}
-                      </h4>
-                      <span className="text-[10px] font-bold text-[#5A5A40] bg-[#F0ECE2] border border-[#E6E2D3] px-2.5 py-0.5 rounded-full">
-                        Room {r.roomNumber} &bull; {r.bedNumber}
-                      </span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <img
+                        src={r.photoUrl}
+                        alt={r.fullName}
+                        className="w-12 h-12 rounded-full object-cover ring-2 ring-[#E6E2D3]"
+                      />
+                      <div>
+                        <h4 className="text-xs font-bold text-[#5A5A40]">
+                          {r.fullName}
+                        </h4>
+                        <span className="text-[10px] font-bold text-[#5A5A40] bg-[#F0ECE2] border border-[#E6E2D3] px-2.5 py-0.5 rounded-full">
+                          Room {r.roomNumber} &bull; {r.bedNumber}
+                        </span>
+                      </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditResidentModal(r)}
+                      title="Edit Resident & Bed Tag"
+                      className="p-1.5 rounded-xl bg-[#FAF9F6] border border-[#E6E2D3] text-[#889E81] hover:bg-[#889E81] hover:text-white transition-all cursor-pointer shadow-2xs"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
                   </div>
 
                   <div className="text-xs text-[#7C7C6D] space-y-1 pt-2 border-t border-[#E6E2D3]">
@@ -974,6 +1167,164 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
           </div>
         </div>
       )}
+      {/* MODAL: Edit Resident Profile & Bed Tag */}
+      {editingResident && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className="bg-white rounded-[28px] max-w-lg w-full p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto border border-[#E6E2D3]">
+            <div className="flex items-center justify-between border-b border-[#E6E2D3] pb-3">
+              <div className="flex items-center space-x-2">
+                <Edit2 className="w-4 h-4 text-[#889E81]" />
+                <h3 className="text-sm font-serif font-bold text-[#5A5A40]">
+                  Edit Resident &amp; Bed Register
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingResident(null)}
+                className="text-[#8C8C7E] hover:text-[#5A5A40] text-xl font-bold cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveResidentModal} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                    Full Legal Name:
+                  </label>
+                  <input
+                    type="text"
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                    Preferred Name / Nickname:
+                  </label>
+                  <input
+                    type="text"
+                    value={editPreferredName}
+                    onChange={(e) => setEditPreferredName(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                    Room Number:
+                  </label>
+                  <input
+                    type="text"
+                    value={editRoomNumber}
+                    onChange={(e) => setEditRoomNumber(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                    Bed Register:
+                  </label>
+                  <select
+                    value={editBedNumber}
+                    onChange={(e) => setEditBedNumber(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                  >
+                    <option value="Bed A">Bed A (Window)</option>
+                    <option value="Bed B">Bed B (Door)</option>
+                    <option value="Bed C">Bed C</option>
+                    <option value="Bed D">Bed D</option>
+                    <option value="Private Suite">Private Suite</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                    Age (Years):
+                  </label>
+                  <input
+                    type="number"
+                    value={editAge}
+                    onChange={(e) => setEditAge(parseInt(e.target.value) || 75)}
+                    className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                  Dietary Requirements:
+                </label>
+                <input
+                  type="text"
+                  value={editDiet}
+                  onChange={(e) => setEditDiet(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                  Assigned Caregiver Staff:
+                </label>
+                <input
+                  type="text"
+                  value={editCaregiverName}
+                  onChange={(e) => setEditCaregiverName(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                    Primary Family Contact:
+                  </label>
+                  <input
+                    type="text"
+                    value={editFamilyName}
+                    onChange={(e) => setEditFamilyName(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                    Family Contact Email:
+                  </label>
+                  <input
+                    type="email"
+                    value={editFamilyEmail}
+                    onChange={(e) => setEditFamilyEmail(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingResident(null)}
+                  className="px-4 py-2 text-xs font-semibold text-[#7C7C6D] hover:bg-[#FAF9F6] rounded-full cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-[#889E81] hover:bg-[#788E71] text-white text-xs font-bold rounded-full shadow-xs cursor-pointer"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Photo Zoom Preview Modal */}
       {selectedPreviewImage && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">

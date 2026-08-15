@@ -266,6 +266,61 @@ export default function App() {
     }
   };
 
+  // Handler: Update existing resident name, bed register, and details
+  const handleUpdateResident = async (residentId: string, updatedFields: Partial<Resident>) => {
+    try {
+      const response = await fetch(`/api/residents/${residentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields),
+      });
+
+      if (response.ok) {
+        const updated: Resident = await response.json();
+        setResidents((prev) =>
+          prev.map((r) => (r.id === residentId ? updated : r))
+        );
+      } else {
+        setResidents((prev) =>
+          prev.map((r) => (r.id === residentId ? { ...r, ...updatedFields } : r))
+        );
+      }
+
+      // Keep careLogs and familyMessages sync'd with updated resident details
+      if (updatedFields.fullName || updatedFields.roomNumber || updatedFields.bedNumber) {
+        setFamilyMessages((prev) =>
+          prev.map((m) =>
+            m.residentId === residentId
+              ? {
+                  ...m,
+                  residentFullName: updatedFields.fullName || m.residentFullName,
+                  roomNumber: updatedFields.roomNumber || m.roomNumber,
+                  bedNumber: updatedFields.bedNumber || m.bedNumber,
+                }
+              : m
+          )
+        );
+        setCareLogs((prev) =>
+          prev.map((l) =>
+            l.residentId === residentId
+              ? {
+                  ...l,
+                  residentFullName: updatedFields.fullName || l.residentFullName,
+                  roomNumber: updatedFields.roomNumber || l.roomNumber,
+                  bedNumber: updatedFields.bedNumber || l.bedNumber,
+                }
+              : l
+          )
+        );
+      }
+    } catch (err) {
+      console.error('Failed to update resident:', err);
+      setResidents((prev) =>
+        prev.map((r) => (r.id === residentId ? { ...r, ...updatedFields } : r))
+      );
+    }
+  };
+
   const pendingInquiriesCount = familyMessages.filter(
     (m) => m.status === 'intercepted_pending_admin'
   ).length;
@@ -314,6 +369,7 @@ export default function App() {
             morningVitals={morningVitals}
             onRespondMessage={handleRespondMessage}
             onAddResident={handleAddResident}
+            onUpdateResident={handleUpdateResident}
           />
         )}
       </main>
