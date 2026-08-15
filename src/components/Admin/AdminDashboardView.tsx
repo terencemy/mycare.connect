@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   CheckCircle2,
+  AlertCircle,
   Clock,
   Sparkles,
   Users,
@@ -942,7 +943,11 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                   : 'bg-amber-50 text-amber-800 border-amber-200'
               }`}
             >
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              {syncToast.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              )}
               <span>{syncToast.message}</span>
             </div>
           )}

@@ -80,12 +80,33 @@ function getGeminiClient(): GoogleGenAI {
   return genAiClient;
 }
 
+// Server in-memory cache of missing columns in Supabase
+const cachedMissingColumnsServer = new Set<string>();
+
+const extractMissingColumnServer = (errorMessage?: string): string | null => {
+  if (!errorMessage) return null;
+  const match =
+    errorMessage.match(/Could not find the '([^']+)' column/i) ||
+    errorMessage.match(/Could not find the "([^"]+)" column/i) ||
+    errorMessage.match(/column ["']?([^"'\s]+)["']? of relation/i) ||
+    errorMessage.match(/column ["']?([^"'\s]+)["']? does not exist/i) ||
+    errorMessage.match(/column ["']?([^"'\s]+)["']? not found/i);
+  return match ? match[1] : null;
+};
+
 // Safe upsert helper with schema cache fallback
 async function safeUpsertResidentsServer(rows: any[]): Promise<{ data: any; error: any }> {
-  let currentRows = rows.map((r) => ({ ...r }));
+  let currentRows = rows.map((r) => {
+    const copy: any = { ...r };
+    cachedMissingColumnsServer.forEach((col) => {
+      delete copy[col];
+    });
+    return copy;
+  });
+
   let attempt = 0;
 
-  while (attempt <= 3) {
+  while (attempt <= 25) {
     const { data, error } = await supabaseServer
       .from('residents')
       .upsert(currentRows, { onConflict: 'id' })
@@ -95,9 +116,9 @@ async function safeUpsertResidentsServer(rows: any[]): Promise<{ data: any; erro
       return { data, error: null };
     }
 
-    const match = error.message.match(/Could not find the '([^']+)' column/i);
-    if (match && match[1]) {
-      const missingCol = match[1];
+    const missingCol = extractMissingColumnServer(error.message);
+    if (missingCol) {
+      cachedMissingColumnsServer.add(missingCol);
       console.warn(`[Supabase Server Auto-Heal] Column '${missingCol}' missing in DB schema. Stripping and retrying...`);
       currentRows = currentRows.map((r) => {
         const copy = { ...r };

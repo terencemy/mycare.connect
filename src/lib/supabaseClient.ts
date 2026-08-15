@@ -71,16 +71,41 @@ export const supabaseRowToResident = (row: any): Resident => {
   };
 };
 
+// In-memory cache of columns discovered to be missing from the remote Supabase schema
+const cachedMissingColumns = new Set<string>();
+
+/**
+ * Extracts missing column name from Supabase / PostgREST / Postgres error strings
+ */
+const extractMissingColumnFromError = (errorMessage?: string): string | null => {
+  if (!errorMessage) return null;
+  const match =
+    errorMessage.match(/Could not find the '([^']+)' column/i) ||
+    errorMessage.match(/Could not find the "([^"]+)" column/i) ||
+    errorMessage.match(/column ["']?([^"'\s]+)["']? of relation/i) ||
+    errorMessage.match(/column ["']?([^"'\s]+)["']? does not exist/i) ||
+    errorMessage.match(/column ["']?([^"'\s]+)["']? not found/i);
+  return match ? match[1] : null;
+};
+
 /**
  * Helper to safely upsert rows into Supabase with automatic schema-cache column fallback.
- * If a column like 'admission_date' is missing in the user's PostgreSQL schema,
- * it automatically strips the missing field and retries the upsert seamlessly.
+ * If columns like 'admission_date' or 'photo_url' are missing in the user's PostgreSQL schema,
+ * it automatically strips missing fields and retries until the upsert matches the live database columns.
  */
 const safeUpsertResidentsTable = async (
   rows: any[],
-  maxRetries = 3
+  maxRetries = 25
 ): Promise<{ data: any; error: any }> => {
-  let currentRows = rows.map((r) => ({ ...r }));
+  // Pre-strip any columns already known to be missing
+  let currentRows = rows.map((r) => {
+    const clean: any = { ...r };
+    cachedMissingColumns.forEach((col) => {
+      delete clean[col];
+    });
+    return clean;
+  });
+
   let attempt = 0;
 
   while (attempt <= maxRetries) {
@@ -94,10 +119,10 @@ const safeUpsertResidentsTable = async (
     }
 
     // Check if the error is due to a missing column in Supabase's schema cache
-    const match = error.message.match(/Could not find the '([^']+)' column/i);
-    if (match && match[1]) {
-      const missingCol = match[1];
-      console.warn(`[Supabase Auto-Heal] Column '${missingCol}' not found in Supabase schema. Stripping column and retrying upsert...`);
+    const missingCol = extractMissingColumnFromError(error.message);
+    if (missingCol) {
+      cachedMissingColumns.add(missingCol);
+      console.warn(`[Supabase Auto-Heal] Column '${missingCol}' not found in Supabase schema. Stripping and retrying upsert...`);
       currentRows = currentRows.map((r) => {
         const copy = { ...r };
         delete copy[missingCol];
@@ -157,10 +182,15 @@ export const updateResidentInSupabase = async (
     if (updates.photoUrl !== undefined) rowUpdates.photo_url = updates.photoUrl;
     if (updates.admissionDate !== undefined) rowUpdates.admission_date = updates.admissionDate;
 
-    let currentUpdates = { ...rowUpdates };
+    // Pre-strip cached missing columns
+    let currentUpdates: any = { ...rowUpdates };
+    cachedMissingColumns.forEach((col) => {
+      delete currentUpdates[col];
+    });
+
     let attempt = 0;
 
-    while (attempt <= 3) {
+    while (attempt <= 25) {
       const { data, error } = await supabase
         .from('residents')
         .update(currentUpdates)
@@ -171,9 +201,9 @@ export const updateResidentInSupabase = async (
         return { success: true, data };
       }
 
-      const match = error.message.match(/Could not find the '([^']+)' column/i);
-      if (match && match[1]) {
-        const missingCol = match[1];
+      const missingCol = extractMissingColumnFromError(error.message);
+      if (missingCol) {
+        cachedMissingColumns.add(missingCol);
         delete currentUpdates[missingCol];
         attempt++;
         continue;
