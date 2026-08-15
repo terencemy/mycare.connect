@@ -357,18 +357,24 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                             : 'border-[#E6E2D3] bg-white hover:bg-[#FAF9F6]'
                         }`}
                       >
-                        <img
-                          src={res.photoUrl}
-                          alt={res.fullName}
-                          className="w-10 h-10 rounded-full object-cover shrink-0 ring-2 ring-[#E6E2D3]"
-                        />
+                        <div className="w-10 h-10 rounded-full bg-[#EBF1EA] text-[#5A5A40] font-bold text-xs flex items-center justify-center shrink-0 ring-2 ring-[#E6E2D3]">
+                          {res.fullName
+                            ? res.fullName
+                                .split(' ')
+                                .filter(Boolean)
+                                .map((n) => n[0])
+                                .slice(0, 2)
+                                .join('')
+                                .toUpperCase()
+                            : 'R'}
+                        </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-[#5A5A40] truncate">
                               {res.fullName}
                             </span>
                             <span className="text-[10px] font-bold text-[#5A5A40] bg-[#F0ECE2] px-2 py-0.5 rounded-full border border-[#E6E2D3]">
-                              Rm {res.roomNumber} &bull; {res.bedNumber}
+                              R {res.roomNumber} &bull; {res.bedNumber}
                             </span>
                           </div>
                           <p className="text-[11px] text-[#7C7C6D] truncate">
@@ -758,7 +764,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                         {log.residentFullName}
                       </span>
                       <span className="text-[10px] font-bold text-[#5A5A40] bg-[#F0ECE2] px-2.5 py-0.5 rounded-full border border-[#E6E2D3]">
-                        Rm {log.roomNumber} &bull; {log.bedNumber}
+                        R {log.roomNumber} &bull; {log.bedNumber}
                       </span>
                     </div>
                     <span className="text-[11px] text-[#8C8C7E]">

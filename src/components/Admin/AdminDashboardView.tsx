@@ -672,7 +672,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                     </div>
 
                     <div className="text-xs font-semibold text-[#889E81]">
-                      Re: {msg.residentFullName} (Rm {msg.roomNumber}, {msg.bedNumber})
+                      Re: {msg.residentFullName} (R {msg.roomNumber}, {msg.bedNumber})
                     </div>
 
                     <p className="text-xs text-[#7C7C6D] line-clamp-2">

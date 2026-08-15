@@ -160,7 +160,7 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
             >
               {residents.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.fullName} (Rm {r.roomNumber})
+                  {r.fullName} (R {r.roomNumber})
                 </option>
               ))}
             </select>

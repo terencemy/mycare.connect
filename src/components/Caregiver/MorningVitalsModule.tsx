@@ -463,17 +463,23 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 truncate">
-                      <img
-                        src={r.photoUrl}
-                        alt={r.fullName}
-                        className="w-8 h-8 rounded-full object-cover shrink-0 ring-1 ring-[#E6E2D3]"
-                      />
+                      <div className="w-8 h-8 rounded-full bg-[#EBF1EA] text-[#5A5A40] font-bold text-[11px] flex items-center justify-center shrink-0 ring-1 ring-[#889E81]/30">
+                        {r.fullName
+                          ? r.fullName
+                              .split(' ')
+                              .filter(Boolean)
+                              .map((n) => n[0])
+                              .slice(0, 2)
+                              .join('')
+                              .toUpperCase()
+                          : 'R'}
+                      </div>
                       <div className="truncate">
                         <div className="text-xs font-bold text-[#5A5A40] truncate">
                           {r.fullName}
                         </div>
                         <div className="text-[10px] text-[#7C7C6D]">
-                          Rm {r.roomNumber} &bull; {r.bedNumber}
+                          R {r.roomNumber} &bull; {r.bedNumber}
                         </div>
                       </div>
                     </div>
