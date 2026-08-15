@@ -15,7 +15,9 @@ import { INITIAL_USERS, INITIAL_RESIDENTS, INITIAL_CARE_LOGS, INITIAL_FAMILY_MES
 import {
   syncResidentToSupabase,
   updateResidentInSupabase,
+  deleteResidentFromSupabase,
   fetchResidentsFromSupabase,
+  toValidUuid,
 } from './lib/supabaseClient';
 
 export default function App() {
@@ -364,6 +366,29 @@ export default function App() {
     }
   };
 
+  // Handler: Delete resident & deallocate bed
+  const handleDeleteResident = async (residentId: string) => {
+    try {
+      const targetUuid = toValidUuid(residentId);
+      // Optimistically remove resident from state
+      setResidents((prev) =>
+        prev.filter((r) => r.id !== residentId && toValidUuid(r.id) !== targetUuid)
+      );
+
+      // Delete from Supabase
+      deleteResidentFromSupabase(residentId).catch((e) =>
+        console.warn('Supabase delete resident note:', e)
+      );
+
+      // Delete from server API
+      fetch(`/api/residents/${encodeURIComponent(residentId)}`, {
+        method: 'DELETE',
+      }).catch((e) => console.warn('Server API delete note:', e));
+    } catch (err) {
+      console.error('Failed to delete resident:', err);
+    }
+  };
+
   const pendingInquiriesCount = familyMessages.filter(
     (m) => m.status === 'intercepted_pending_admin'
   ).length;
@@ -413,6 +438,7 @@ export default function App() {
             onRespondMessage={handleRespondMessage}
             onAddResident={handleAddResident}
             onUpdateResident={handleUpdateResident}
+            onDeleteResident={handleDeleteResident}
           />
         )}
       </main>

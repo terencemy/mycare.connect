@@ -322,3 +322,38 @@ export const syncAllResidentsToSupabase = async (
     return { success: false, count: 0, error: err?.message || 'Network error' };
   }
 };
+
+/**
+ * Deletes a resident record from Supabase database
+ */
+export const deleteResidentFromSupabase = async (
+  residentId: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const targetUuid = toValidUuid(residentId);
+    
+    // Try deleting by mapped UUID
+    const { error: uuidErr } = await supabase
+      .from('residents')
+      .delete()
+      .eq('id', targetUuid);
+
+    if (uuidErr) {
+      // Also try deleting by raw ID string in case string primary key was used
+      const { error: rawErr } = await supabase
+        .from('residents')
+        .delete()
+        .eq('id', residentId);
+
+      if (rawErr && uuidErr) {
+        console.warn('Supabase delete resident error:', uuidErr.message || rawErr.message);
+        return { success: false, error: uuidErr.message || rawErr.message };
+      }
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.warn('Supabase delete network error:', err);
+    return { success: false, error: err?.message || 'Network error' };
+  }
+};

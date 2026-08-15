@@ -6,6 +6,7 @@ import {
 } from '../../types';
 import { SAMPLE_VITALS_PRESETS } from '../../data/mockData';
 import { applyVitalsWatermark } from '../../utils/watermark';
+import { isResidentMatch } from '../../utils/residentMatcher';
 import {
   Camera,
   Upload,
@@ -58,7 +59,8 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
 
   // Helper: check if resident already completed today
   const getResidentTodayRecord = (resId: string) => {
-    return morningVitals.find((v) => v.residentId === resId);
+    const targetResident = residents.find((r) => r.id === resId);
+    return morningVitals.find((v) => isResidentMatch(targetResident, v) || v.residentId === resId);
   };
 
   const existingRecord = getResidentTodayRecord(selectedResident?.id || '');

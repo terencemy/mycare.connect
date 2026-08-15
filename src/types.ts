@@ -61,6 +61,7 @@ export interface VitalsData {
   vitalsRecordedAt?: string;
   isBefore7am?: boolean;
   watermarkSummary?: string;
+  deviceType?: string;
 }
 
 export interface MorningVitalsRecord {

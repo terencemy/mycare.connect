@@ -270,6 +270,30 @@ async function startServer() {
     res.json(updatedResident);
   });
 
+  // Delete resident & deallocate bed
+  app.delete('/api/residents/:id', async (req, res) => {
+    const residentId = req.params.id;
+    const index = residents.findIndex(
+      (r) => r.id === residentId || toValidUuid(r.id) === toValidUuid(residentId)
+    );
+
+    if (index === -1) {
+      return res.status(404).json({ error: 'Resident not found' });
+    }
+
+    const [deletedResident] = residents.splice(index, 1);
+
+    // Asynchronously delete from Supabase
+    try {
+      const targetUuid = toValidUuid(residentId);
+      await supabaseServer.from('residents').delete().eq('id', targetUuid);
+    } catch (e) {
+      console.warn('Supabase async delete error:', e);
+    }
+
+    res.json({ success: true, message: 'Resident and bed allocation deleted', resident: deletedResident });
+  });
+
   // Supabase Bulk Sync Route
   app.post('/api/residents/sync-supabase', async (req, res) => {
     try {

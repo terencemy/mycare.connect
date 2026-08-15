@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase, SUPABASE_URL, syncAllResidentsToSupabase } from '../../lib/supabaseClient';
+import { isResidentMatch } from '../../utils/residentMatcher';
 import {
   Resident,
   CareLog,
@@ -24,6 +25,7 @@ import {
   Database,
   Plus,
   Edit2,
+  Trash2,
   FileCode,
   Check,
   Search,
@@ -36,6 +38,7 @@ import {
   Phone,
   CloudCheck,
   UploadCloud,
+  X,
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -47,6 +50,7 @@ interface AdminDashboardViewProps {
   onRespondMessage: (msgId: string, responseText: string) => Promise<void>;
   onAddResident: (res: Partial<Resident>) => Promise<void>;
   onUpdateResident?: (residentId: string, updatedFields: Partial<Resident>) => Promise<void>;
+  onDeleteResident?: (residentId: string) => Promise<void>;
 }
 
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
@@ -58,6 +62,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   onRespondMessage,
   onAddResident,
   onUpdateResident,
+  onDeleteResident,
 }) => {
   const [activeTab, setActiveTab] = useState<'triage' | 'vitals_audit' | 'residents' | 'analytics' | 'supabase_schema'>('triage');
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<string | null>(null);
@@ -120,6 +125,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [editFamilyRelation, setEditFamilyRelation] = useState('Family Member');
   const [editFamilyEmail, setEditFamilyEmail] = useState('');
   const [editFamilyPhone, setEditFamilyPhone] = useState('');
+
+  // Delete Resident State & Modal
+  const [residentToDelete, setResidentToDelete] = useState<Resident | null>(null);
+  const [isDeletingResident, setIsDeletingResident] = useState(false);
+  const [deleteToast, setDeleteToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Directory Search & Bed Filtering State
+  const [directorySearch, setDirectorySearch] = useState('');
+  const [directoryBedFilter, setDirectoryBedFilter] = useState('All');
 
   const handleTestSupabase = async () => {
     try {
@@ -247,6 +261,36 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       });
     }
     setEditingResident(null);
+  };
+
+  const handleRequestDeleteResident = (r: Resident) => {
+    setResidentToDelete(r);
+  };
+
+  const handleConfirmDeleteResident = async () => {
+    if (!residentToDelete) return;
+    setIsDeletingResident(true);
+    try {
+      if (onDeleteResident) {
+        await onDeleteResident(residentToDelete.id);
+      }
+      setDeleteToast({
+        type: 'success',
+        message: `Resident "${residentToDelete.fullName}" successfully removed and Bed (${residentToDelete.roomNumber} - ${residentToDelete.bedNumber}) freed.`,
+      });
+      if (editingResident?.id === residentToDelete.id) {
+        setEditingResident(null);
+      }
+      setResidentToDelete(null);
+    } catch (err: any) {
+      setDeleteToast({
+        type: 'error',
+        message: `Failed to delete resident: ${err?.message || 'Unknown error'}`,
+      });
+    } finally {
+      setIsDeletingResident(false);
+      setTimeout(() => setDeleteToast(null), 5000);
+    }
   };
 
   const handleSendAdminResponse = async () => {
@@ -544,7 +588,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
 
             <div className="divide-y divide-[#E6E2D3]">
               {residents.map((res) => {
-                const record = morningVitals.find((v) => v.residentId === res.id);
+                const record = morningVitals.find((v) => isResidentMatch(res, v));
 
                 return (
                   <div key={res.id} className="p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-[#FAF9F6]/60 transition-colors">
@@ -952,19 +996,88 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
             </div>
           )}
 
-          <div className="flex items-center justify-between pt-1">
-            <h3 className="text-sm font-serif font-bold text-[#5A5A40]">
-              Resident Directory &amp; Bed Allocation ({residents.length} Active Residents)
-            </h3>
-            <button
-              id="admin-open-add-resident-btn"
-              type="button"
-              onClick={() => setIsAddResidentModalOpen(true)}
-              className="px-4 py-2.5 bg-[#889E81] hover:bg-[#788E71] text-white rounded-full text-xs font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer"
+          {/* Delete Feedback Toast */}
+          {deleteToast && (
+            <div
+              className={`p-3 rounded-xl border text-xs font-semibold flex items-center space-x-2 animate-in fade-in slide-in-from-top-2 duration-200 ${
+                deleteToast.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  : 'bg-rose-50 text-rose-800 border-rose-200'
+              }`}
             >
-              <Plus className="w-4 h-4" />
-              <span>Admit New Resident</span>
-            </button>
+              {deleteToast.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              )}
+              <span>{deleteToast.message}</span>
+            </div>
+          )}
+
+          {/* Directory Toolbar: Search, Filter by Bed, and Add Resident */}
+          <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-4 shadow-2xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-serif font-bold text-[#5A5A40] flex items-center space-x-2">
+                  <span>Resident Directory &amp; Bed Registry</span>
+                  <span className="text-[11px] font-sans font-bold bg-[#F0ECE2] text-[#5A5A40] px-2.5 py-0.5 rounded-full border border-[#E6E2D3]">
+                    {residents.length} Allocated
+                  </span>
+                </h3>
+                <p className="text-[11px] text-[#7C7C6D]">
+                  Manage resident profiles, bed assignments, caregiver rosters, and directory records.
+                </p>
+              </div>
+
+              <button
+                id="admin-open-add-resident-btn"
+                type="button"
+                onClick={() => setIsAddResidentModalOpen(true)}
+                className="px-4 py-2.5 bg-[#889E81] hover:bg-[#788E71] text-white rounded-full text-xs font-bold flex items-center justify-center space-x-1.5 shadow-xs cursor-pointer shrink-0 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Admit New Resident</span>
+              </button>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2.5 pt-2 border-t border-[#E6E2D3]">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-[#8C8C7E] absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search resident name, room #, family contact, caregiver..."
+                  value={directorySearch}
+                  onChange={(e) => setDirectorySearch(e.target.value)}
+                  className="w-full pl-9 pr-8 py-2 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl text-xs text-[#4A4A40] placeholder-[#8C8C7E] focus:outline-none focus:ring-2 focus:ring-[#889E81]"
+                />
+                {directorySearch && (
+                  <button
+                    type="button"
+                    onClick={() => setDirectorySearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8C8C7E] hover:text-[#5A5A40] text-xs p-0.5 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center space-x-2 shrink-0">
+                <span className="text-[11px] font-bold text-[#7C7C6D]">Filter Bed:</span>
+                <select
+                  value={directoryBedFilter}
+                  onChange={(e) => setDirectoryBedFilter(e.target.value)}
+                  className="px-3 py-2 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl text-xs font-semibold text-[#5A5A40] focus:outline-none focus:ring-2 focus:ring-[#889E81]"
+                >
+                  <option value="All">All Beds ({residents.length})</option>
+                  {BED_IDENTIFIER_OPTIONS.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
 
           {residents.length === 0 ? (
@@ -984,76 +1097,140 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {residents.map((r) => (
-                <div
-                  key={r.id}
-                  className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-3 relative group"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-11 h-11 rounded-full bg-[#EBF1EA] text-[#5A5A40] font-bold text-xs flex items-center justify-center ring-2 ring-[#E6E2D3] shrink-0">
-                        {r.fullName
-                          ? r.fullName
-                              .split(' ')
-                              .filter(Boolean)
-                              .map((n) => n[0])
-                              .slice(0, 2)
-                              .join('')
-                              .toUpperCase()
-                          : 'R'}
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-[#5A5A40]">
-                          {r.fullName}
-                        </h4>
-                        <span className="text-[10px] font-bold text-[#5A5A40] bg-[#F0ECE2] border border-[#E6E2D3] px-2.5 py-0.5 rounded-full">
-                          Room {r.roomNumber} &bull; {r.bedNumber}
-                        </span>
-                      </div>
+            <>
+              {(() => {
+                const filteredResidents = residents.filter((r) => {
+                  const query = directorySearch.trim().toLowerCase();
+                  const matchesQuery =
+                    !query ||
+                    r.fullName?.toLowerCase().includes(query) ||
+                    r.preferredName?.toLowerCase().includes(query) ||
+                    r.roomNumber?.toLowerCase().includes(query) ||
+                    r.bedNumber?.toLowerCase().includes(query) ||
+                    r.familyContactName?.toLowerCase().includes(query) ||
+                    r.assignedCaregiverName?.toLowerCase().includes(query);
+
+                  const matchesBed =
+                    directoryBedFilter === 'All' || r.bedNumber === directoryBedFilter;
+
+                  return matchesQuery && matchesBed;
+                });
+
+                if (filteredResidents.length === 0) {
+                  return (
+                    <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-8 text-center space-y-2">
+                      <Search className="w-8 h-8 text-[#8C8C7E] mx-auto opacity-60" />
+                      <p className="text-xs font-bold text-[#5A5A40]">
+                        No residents match your search filters
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDirectorySearch('');
+                          setDirectoryBedFilter('All');
+                        }}
+                        className="text-xs text-[#889E81] font-semibold hover:underline cursor-pointer"
+                      >
+                        Reset filters
+                      </button>
                     </div>
+                  );
+                }
 
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEditResidentModal(r)}
-                      title="Edit Resident & Bed Tag"
-                      className="p-1.5 rounded-xl bg-[#FAF9F6] border border-[#E6E2D3] text-[#889E81] hover:bg-[#889E81] hover:text-white transition-all cursor-pointer shadow-2xs"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredResidents.map((r) => (
+                      <div
+                        key={r.id}
+                        id={`resident-card-${r.id}`}
+                        className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-3 relative group hover:border-[#889E81]/60 transition-all"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-11 h-11 rounded-full bg-[#EBF1EA] text-[#5A5A40] font-bold text-xs flex items-center justify-center ring-2 ring-[#E6E2D3] shrink-0">
+                              {r.fullName
+                                ? r.fullName
+                                    .split(' ')
+                                    .filter(Boolean)
+                                    .map((n) => n[0])
+                                    .slice(0, 2)
+                                    .join('')
+                                    .toUpperCase()
+                                : 'R'}
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-[#5A5A40] leading-tight">
+                                {r.fullName}
+                              </h4>
+                              <div className="mt-1 flex items-center space-x-1.5">
+                                <span className="text-[10px] font-bold text-[#5A5A40] bg-[#F0ECE2] border border-[#E6E2D3] px-2.5 py-0.5 rounded-full inline-flex items-center space-x-1">
+                                  <Bed className="w-3 h-3 text-[#889E81]" />
+                                  <span>Room {r.roomNumber} &bull; {r.bedNumber}</span>
+                                </span>
+                              </div>
+                            </div>
+                          </div>
 
-                  <div className="text-xs text-[#7C7C6D] space-y-1.5 pt-2 border-t border-[#E6E2D3]">
-                    <p>
-                      <span className="text-[#8C8C7E]">Age:</span> {r.age} yrs &bull; Admitted: {r.admissionDate}
-                    </p>
-                    <p>
-                      <span className="text-[#8C8C7E]">Caregiver:</span> <strong className="text-[#5A5A40]">{r.assignedCaregiverName}</strong>
-                    </p>
-                    <p>
-                      <span className="text-[#8C8C7E]">Diet:</span> {r.dietaryRestrictions}
-                    </p>
-                    <p>
-                      <span className="text-[#8C8C7E]">Family Contact:</span>{' '}
-                      <strong className="text-[#5A5A40]">{r.familyContactName || 'Primary Contact'}</strong>{' '}
-                      {r.familyContactRelation && <span className="text-[#8C8C7E]">({r.familyContactRelation})</span>}
-                    </p>
-                    {r.familyContactEmail ? (
-                      <div className="flex items-center space-x-1.5 text-[11px] text-[#5A5A40] bg-[#FAF9F6] p-1.5 rounded-lg border border-[#E6E2D3]">
-                        <Mail className="w-3.5 h-3.5 text-[#889E81] shrink-0" />
-                        <span className="font-medium truncate">{r.familyContactEmail}</span>
+                          {/* Card Action Controls: Edit & Delete */}
+                          <div className="flex items-center space-x-1.5">
+                            <button
+                              type="button"
+                              id={`admin-edit-resident-btn-${r.id}`}
+                              onClick={() => handleOpenEditResidentModal(r)}
+                              title="Edit Resident Profile & Bed Registry"
+                              className="p-1.5 rounded-xl bg-[#FAF9F6] border border-[#E6E2D3] text-[#889E81] hover:bg-[#889E81] hover:text-white transition-all cursor-pointer shadow-2xs"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              id={`admin-delete-resident-btn-${r.id}`}
+                              onClick={() => handleRequestDeleteResident(r)}
+                              title="Delete Resident & Free Bed Allocation"
+                              className="p-1.5 rounded-xl bg-[#FAF9F6] border border-[#E6E2D3] text-[#8C8C7E] hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-all cursor-pointer shadow-2xs"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="text-xs text-[#7C7C6D] space-y-1.5 pt-2 border-t border-[#E6E2D3]">
+                          <p>
+                            <span className="text-[#8C8C7E]">Age:</span> {r.age} yrs &bull; Admitted: {r.admissionDate}
+                          </p>
+                          <p>
+                            <span className="text-[#8C8C7E]">Caregiver:</span>{' '}
+                            <strong className="text-[#5A5A40]">{r.assignedCaregiverName}</strong>
+                          </p>
+                          <p>
+                            <span className="text-[#8C8C7E]">Diet:</span> {r.dietaryRestrictions}
+                          </p>
+                          <p>
+                            <span className="text-[#8C8C7E]">Family Contact:</span>{' '}
+                            <strong className="text-[#5A5A40]">{r.familyContactName || 'Primary Contact'}</strong>{' '}
+                            {r.familyContactRelation && (
+                              <span className="text-[#8C8C7E]">({r.familyContactRelation})</span>
+                            )}
+                          </p>
+                          {r.familyContactEmail ? (
+                            <div className="flex items-center space-x-1.5 text-[11px] text-[#5A5A40] bg-[#FAF9F6] p-1.5 rounded-lg border border-[#E6E2D3]">
+                              <Mail className="w-3.5 h-3.5 text-[#889E81] shrink-0" />
+                              <span className="font-medium truncate">{r.familyContactEmail}</span>
+                            </div>
+                          ) : null}
+                          {r.familyContactPhone ? (
+                            <div className="flex items-center space-x-1.5 text-[11px] text-[#7C7C6D]">
+                              <Phone className="w-3 h-3 text-[#8C8C7E] shrink-0" />
+                              <span>{r.familyContactPhone}</span>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
-                    ) : null}
-                    {r.familyContactPhone ? (
-                      <div className="flex items-center space-x-1.5 text-[11px] text-[#7C7C6D]">
-                        <Phone className="w-3 h-3 text-[#8C8C7E] shrink-0" />
-                        <span>{r.familyContactPhone}</span>
-                      </div>
-                    ) : null}
+                    ))}
                   </div>
-                </div>
-              ))}
-            </div>
+                );
+              })()}
+            </>
           )}
         </div>
       )}
@@ -1541,22 +1718,119 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-2 pt-3">
+              <div className="flex items-center justify-between pt-3 border-t border-[#E6E2D3]">
                 <button
                   type="button"
-                  onClick={() => setEditingResident(null)}
-                  className="px-4 py-2 text-xs font-semibold text-[#7C7C6D] hover:bg-[#FAF9F6] rounded-full cursor-pointer"
+                  id="admin-edit-modal-delete-btn"
+                  onClick={() => {
+                    if (editingResident) {
+                      const target = editingResident;
+                      setEditingResident(null);
+                      handleRequestDeleteResident(target);
+                    }
+                  }}
+                  className="px-3.5 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-full flex items-center space-x-1.5 transition-colors cursor-pointer"
                 >
-                  Cancel
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Resident &amp; Free Bed</span>
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-[#889E81] hover:bg-[#788E71] text-white text-xs font-bold rounded-full shadow-xs cursor-pointer"
-                >
-                  Save Changes
-                </button>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingResident(null)}
+                    className="px-4 py-2 text-xs font-semibold text-[#7C7C6D] hover:bg-[#FAF9F6] rounded-full cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 bg-[#889E81] hover:bg-[#788E71] text-white text-xs font-bold rounded-full shadow-xs cursor-pointer"
+                  >
+                    Save Changes
+                  </button>
+                </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Resident Confirmation Modal */}
+      {residentToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-[28px] max-w-md w-full p-6 shadow-2xl border border-[#E6E2D3] space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start space-x-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-serif font-bold text-[#5A5A40]">
+                  Delete Resident &amp; Free Bed?
+                </h3>
+                <p className="text-xs text-[#7C7C6D]">
+                  This will remove the resident from the directory and deallocate their assigned room bed.
+                </p>
+              </div>
+            </div>
+
+            {/* Resident Card Details */}
+            <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-2xl p-3.5 space-y-2 text-xs text-[#5A5A40]">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-[#5A5A40]">{residentToDelete.fullName}</span>
+                <span className="text-[10px] font-bold bg-[#F0ECE2] border border-[#E6E2D3] px-2.5 py-0.5 rounded-full">
+                  Room {residentToDelete.roomNumber} &bull; {residentToDelete.bedNumber}
+                </span>
+              </div>
+              <div className="text-[11px] text-[#7C7C6D] space-y-1 pt-1 border-t border-[#E6E2D3]">
+                <p>
+                  <span className="text-[#8C8C7E]">Assigned Caregiver:</span>{' '}
+                  <strong className="text-[#5A5A40]">{residentToDelete.assignedCaregiverName || 'Caregiver Staff'}</strong>
+                </p>
+                <p>
+                  <span className="text-[#8C8C7E]">Family Contact:</span>{' '}
+                  <strong className="text-[#5A5A40]">{residentToDelete.familyContactName || 'None listed'}</strong>{' '}
+                  {residentToDelete.familyContactRelation && `(${residentToDelete.familyContactRelation})`}
+                </p>
+              </div>
+            </div>
+
+            <div className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-start space-x-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <span>
+                This will delete the record from local state, backend storage, and synchronized Supabase tables. The bed tag will become available for new admissions.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setResidentToDelete(null)}
+                disabled={isDeletingResident}
+                className="px-4 py-2 text-xs font-semibold text-[#7C7C6D] hover:bg-[#FAF9F6] rounded-full cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="confirm-delete-resident-btn"
+                onClick={handleConfirmDeleteResident}
+                disabled={isDeletingResident}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-full shadow-xs flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+              >
+                {isDeletingResident ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirm &amp; Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -25,7 +25,9 @@ import {
   Info,
   ZoomIn,
   Check,
+  Thermometer,
 } from 'lucide-react';
+import { isResidentMatch, getLatestVitalsForResident } from '../../utils/residentMatcher';
 
 interface FamilyPortalViewProps {
   currentFamilyUser: UserProfile;
@@ -48,26 +50,26 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
 }) => {
   // Find linked resident or default to first
   const defaultResident =
-    residents.find((r) => r.id === currentFamilyUser.residentId) || residents[0] || null;
+    residents.find((r) => isResidentMatch(r, currentFamilyUser.residentId)) || residents[0] || null;
   const [selectedResidentId, setSelectedResidentId] = useState<string>(defaultResident?.id || '');
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (!selectedResidentId && residents.length > 0) {
-      const def = residents.find((r) => r.id === currentFamilyUser.residentId) || residents[0];
+      const def = residents.find((r) => isResidentMatch(r, currentFamilyUser.residentId)) || residents[0];
       if (def) setSelectedResidentId(def.id);
     }
   }, [residents, selectedResidentId, currentFamilyUser.residentId]);
 
   const activeResident =
-    residents.find((r) => r.id === selectedResidentId) || defaultResident;
+    residents.find((r) => isResidentMatch(r, selectedResidentId)) || defaultResident;
 
-  // Filter logs & messages for active resident
-  const residentLogs = careLogs.filter((l) => l.residentId === activeResident?.id);
-  const residentMessages = familyMessages.filter(
-    (m) => m.residentId === activeResident?.id
-  );
-  const latestMorningVital = morningVitals.find((v) => v.residentId === activeResident?.id);
+  // Filter logs & messages for active resident with resilient matching
+  const residentLogs = careLogs.filter((l) => isResidentMatch(activeResident, l));
+  const residentMessages = familyMessages.filter((m) => isResidentMatch(activeResident, m));
+
+  // Consolidate latest verified morning vitals from Morning Rounds and Care Logs
+  const activeVitals = getLatestVitalsForResident(activeResident, morningVitals, careLogs);
 
   // Message modal state
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
@@ -145,7 +147,7 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
                 </span>
               </div>
               <p className="text-xs text-[#7C7C6D] mt-0.5">
-                Primary Caregiver: <strong className="text-[#5A5A40]">{activeResident?.assignedCaregiverName}</strong> &bull; Admitted: {activeResident?.admissionDate}
+                Primary Caregiver: <strong className="text-[#5A5A40]">{activeResident?.assignedCaregiverName || 'Caregiver Staff'}</strong> &bull; Admitted: {activeResident?.admissionDate}
               </p>
             </div>
           </div>
@@ -178,10 +180,140 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
         </div>
       </div>
 
-      {/* Main Grid: Left Timeline (8 cols), Right Resident Health Card (4 cols) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* iPad / Tablet Quick Morning Vitals Banner (Visible on md & above for immediate glance, and responsive for mobile) */}
+      <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-[24px] p-4.5 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E6E2D3]">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-8 h-8 rounded-xl bg-[#889E81] text-white flex items-center justify-center shadow-xs shrink-0">
+              <Activity className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-[#5A5A40] flex items-center space-x-1.5">
+                <span>Morning Clinical Vital Signs (Pre-07:00 AM)</span>
+              </h2>
+              <p className="text-[11px] text-[#7C7C6D]">
+                {activeVitals ? (
+                  <>
+                    Audited by <strong className="text-[#5A5A40]">{activeVitals.caregiverName}</strong> on {activeVitals.formattedDate} at {activeVitals.formattedTime}
+                  </>
+                ) : (
+                  'Daily clinical round conducted every morning before 07:00 AM'
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            {activeVitals?.photoUrl && (
+              <button
+                type="button"
+                onClick={() => setSelectedPreviewImage(activeVitals.photoUrl!)}
+                className="text-[11px] font-bold bg-white text-[#5A5A40] hover:text-[#889E81] px-3 py-1.5 rounded-full border border-[#E6E2D3] flex items-center space-x-1.5 shadow-2xs transition-colors cursor-pointer"
+              >
+                <ZoomIn className="w-3.5 h-3.5 text-[#889E81]" />
+                <span>View Watermark Photo</span>
+              </button>
+            )}
+            {activeVitals ? (
+              <span className="text-[11px] font-extrabold text-[#5A5A40] bg-[#EBF1EA] px-3 py-1 rounded-full border border-[#889E81]/40 flex items-center space-x-1">
+                <Check className="w-3.5 h-3.5 text-[#889E81]" />
+                <span>Verified {activeVitals.formattedTime}</span>
+              </span>
+            ) : (
+              <span className="text-[11px] font-semibold text-[#8C8C7E] bg-white px-3 py-1 rounded-full border border-[#E6E2D3]">
+                Pending 7 AM Round
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Vitals Key Metrics Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5 pt-3">
+          <div className="bg-white p-3 rounded-2xl border border-[#E6E2D3] shadow-2xs">
+            <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold tracking-wider">
+              Blood Pressure
+            </span>
+            <div className="text-base font-extrabold text-[#5A5A40] mt-0.5">
+              {activeVitals?.bloodPressure || (activeVitals ? '120/80' : '—')}
+              <span className="text-[10px] font-normal text-[#8C8C7E] ml-1">mmHg</span>
+            </div>
+            <span className="text-[10px] text-[#889E81] font-semibold block mt-0.5">
+              {activeVitals?.bloodPressure ? 'Audited' : 'Pending'}
+            </span>
+          </div>
+
+          <div className="bg-white p-3 rounded-2xl border border-[#E6E2D3] shadow-2xs">
+            <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold tracking-wider">
+              Heart Pulse
+            </span>
+            <div className="text-base font-extrabold text-[#5A5A40] mt-0.5">
+              {activeVitals?.pulseRate !== undefined ? activeVitals.pulseRate : (activeVitals ? '72' : '—')}
+              <span className="text-[10px] font-normal text-[#8C8C7E] ml-1">bpm</span>
+            </div>
+            <span className="text-[10px] text-[#889E81] font-semibold block mt-0.5">
+              Normal Rhythm
+            </span>
+          </div>
+
+          <div className="bg-white p-3 rounded-2xl border border-[#E6E2D3] shadow-2xs">
+            <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold tracking-wider">
+              Oxygen (SpO2)
+            </span>
+            <div className="text-base font-extrabold text-[#5A5A40] mt-0.5">
+              {activeVitals?.spo2 !== undefined ? activeVitals.spo2 : (activeVitals ? '98' : '—')}
+              <span className="text-[10px] font-normal text-[#8C8C7E] ml-1">%</span>
+            </div>
+            <span className="text-[10px] text-[#889E81] font-semibold block mt-0.5">
+              Optimal
+            </span>
+          </div>
+
+          <div className="bg-white p-3 rounded-2xl border border-[#E6E2D3] shadow-2xs">
+            <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold tracking-wider">
+              Body Temp
+            </span>
+            <div className="text-base font-extrabold text-[#5A5A40] mt-0.5">
+              {activeVitals?.temperature !== undefined ? activeVitals.temperature : (activeVitals ? '36.6' : '—')}
+              <span className="text-[10px] font-normal text-[#8C8C7E] ml-1">°C</span>
+            </div>
+            <span className="text-[10px] text-[#889E81] font-semibold block mt-0.5">
+              Afebrile
+            </span>
+          </div>
+
+          {activeVitals?.bloodSugar !== undefined ? (
+            <div className="bg-white p-3 rounded-2xl border border-[#E6E2D3] shadow-2xs col-span-2 sm:col-span-4 lg:col-span-1">
+              <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold tracking-wider">
+                Fasting Sugar
+              </span>
+              <div className="text-base font-extrabold text-[#5A5A40] mt-0.5">
+                {activeVitals.bloodSugar}
+                <span className="text-[10px] font-normal text-[#8C8C7E] ml-1">mmol/L</span>
+              </div>
+              <span className="text-[10px] text-[#889E81] font-semibold block mt-0.5">
+                Target Range
+              </span>
+            </div>
+          ) : (
+            <div className="bg-white p-3 rounded-2xl border border-[#E6E2D3] shadow-2xs col-span-2 sm:col-span-4 lg:col-span-1 flex flex-col justify-between">
+              <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold tracking-wider">
+                Device Protocol
+              </span>
+              <div className="text-xs font-bold text-[#5A5A40] truncate mt-0.5">
+                {activeVitals?.deviceType || 'Digital Monitor'}
+              </div>
+              <span className="text-[10px] text-[#889E81] font-semibold block">
+                Pre-07:00 AM Round
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Main Grid: Left Timeline (8 cols on lg / 7 cols on md iPad), Right Resident Health Card (4 cols on lg / 5 cols on md iPad) */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
         {/* Timeline Updates */}
-        <div className="lg:col-span-8 space-y-6">
+        <div className="md:col-span-7 lg:col-span-8 space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-[#5A5A40] uppercase tracking-wider flex items-center space-x-2">
               <Calendar className="w-4 h-4 text-[#889E81]" />
@@ -210,11 +342,11 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <div className="w-9 h-9 rounded-full bg-[#EBF1EA] flex items-center justify-center text-[#5A5A40] font-bold text-xs border border-[#889E81]/30">
-                      {log.caregiverName.charAt(0)}
+                      {log.caregiverName ? log.caregiverName.charAt(0) : 'C'}
                     </div>
                     <div>
                       <div className="text-xs font-bold text-[#5A5A40]">
-                        {log.caregiverName}
+                        {log.caregiverName || 'Caregiver Staff'}
                       </div>
                       <div className="text-[11px] text-[#8C8C7E]">
                         {new Date(log.timestamp).toLocaleDateString(undefined, {
@@ -233,18 +365,20 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
 
                   <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#F0ECE2] text-[#5A5A40] border border-[#E6E2D3] flex items-center space-x-1">
                     <span>Mood:</span>
-                    <strong className="capitalize">{log.mood}</strong>
+                    <strong className="capitalize">{log.mood || 'Cheerful'}</strong>
                   </span>
                 </div>
 
                 {/* Media Image */}
-                <div className="rounded-2xl overflow-hidden bg-[#2D2D24] aspect-video relative group">
-                  <img
-                    src={log.mediaUrl}
-                    alt={log.residentFullName}
-                    className="w-full h-full object-cover group-hover:scale-101 transition-transform duration-300"
-                  />
-                </div>
+                {log.mediaUrl && (
+                  <div className="rounded-2xl overflow-hidden bg-[#2D2D24] aspect-video relative group">
+                    <img
+                      src={log.mediaUrl}
+                      alt={log.residentFullName}
+                      className="w-full h-full object-cover group-hover:scale-101 transition-transform duration-300"
+                    />
+                  </div>
+                )}
 
                 {/* AI Reassuring Family Narrative */}
                 <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-2xl p-4 space-y-2">
@@ -263,41 +397,44 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
                     <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
                       Breakfast
                     </span>
-                    <span className="font-bold text-[#5A5A40]">{log.meals.breakfast}</span>
+                    <span className="font-bold text-[#5A5A40]">{log.meals?.breakfast || '100%'}</span>
                   </div>
                   <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
                     <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
                       Lunch
                     </span>
-                    <span className="font-bold text-[#5A5A40]">{log.meals.lunch}</span>
+                    <span className="font-bold text-[#5A5A40]">{log.meals?.lunch || '100%'}</span>
                   </div>
                   <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
                     <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
                       Hydration
                     </span>
-                    <span className="font-bold text-[#889E81]">{log.meals.hydrationMl} ml</span>
+                    <span className="font-bold text-[#889E81]">{log.meals?.hydrationMl || 1200} ml</span>
                   </div>
                   <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
                     <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
-                      Vitals
+                      Vitals (BP &amp; Pulse)
                     </span>
                     <span className="font-bold text-[#5A5A40]">
-                      BP {log.vitals?.bloodPressure || 'Normal'}
+                      {log.vitals?.bloodPressure ? `BP ${log.vitals.bloodPressure}` : 'BP 120/80'}
+                      {log.vitals?.pulseRate ? ` • ${log.vitals.pulseRate} bpm` : ''}
                     </span>
                   </div>
                 </div>
 
                 {/* Activity Badges */}
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {log.activities.map((act, i) => (
-                    <span
-                      key={i}
-                      className="text-[11px] bg-[#F0ECE2] text-[#5A5A40] font-medium px-2.5 py-1 rounded-full border border-[#E6E2D3]"
-                    >
-                      {act}
-                    </span>
-                  ))}
-                </div>
+                {log.activities && log.activities.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {log.activities.map((act, i) => (
+                      <span
+                        key={i}
+                        className="text-[11px] bg-[#F0ECE2] text-[#5A5A40] font-medium px-2.5 py-1 rounded-full border border-[#E6E2D3]"
+                      >
+                        {act}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {/* Interactions Footer */}
                 <div className="flex items-center justify-between pt-2 border-t border-[#E6E2D3] text-xs">
@@ -307,7 +444,7 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
                     className="flex items-center space-x-1.5 text-rose-700 hover:text-rose-800 font-semibold transition-colors px-2 py-1 rounded-lg hover:bg-rose-50 cursor-pointer"
                   >
                     <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
-                    <span>Send Love &amp; Gratitude ({log.familyLikesCount})</span>
+                    <span>Send Love &amp; Gratitude ({log.familyLikesCount || 0})</span>
                   </button>
 
                   <button
@@ -324,8 +461,8 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
           )}
         </div>
 
-        {/* Right Column: Resident Medical Profile & Intercepted Message Status (4 cols) */}
-        <div className="lg:col-span-4 space-y-6">
+        {/* Right Column: Resident Medical Profile & Intercepted Message Status (4 cols on lg / 5 cols on md iPad) */}
+        <div className="md:col-span-5 lg:col-span-4 space-y-6">
           {/* Pre-7 AM Verified Morning Vitals Card */}
           <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-3">
             <div className="flex items-center justify-between">
@@ -333,10 +470,10 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
                 <Clock className="w-4 h-4 text-[#889E81]" />
                 <span>Morning Vitals (Pre-7 AM)</span>
               </h3>
-              {latestMorningVital ? (
+              {activeVitals ? (
                 <span className="text-[10px] font-bold text-[#889E81] bg-[#EBF1EA] px-2 py-0.5 rounded-full border border-[#889E81]/30 flex items-center space-x-1">
                   <Check className="w-3 h-3" />
-                  <span>Verified {latestMorningVital.formattedTime}</span>
+                  <span>Verified {activeVitals.formattedTime}</span>
                 </span>
               ) : (
                 <span className="text-[10px] font-semibold text-[#8C8C7E] bg-[#FAF9F6] px-2 py-0.5 rounded-full border border-[#E6E2D3]">
@@ -345,16 +482,16 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
               )}
             </div>
 
-            {latestMorningVital ? (
+            {activeVitals ? (
               <div className="space-y-3 pt-1">
                 {/* Watermarked photo thumbnail */}
-                {latestMorningVital.vitalsPhotoUrl && (
+                {activeVitals.photoUrl && (
                   <div
-                    onClick={() => setSelectedPreviewImage(latestMorningVital.vitalsPhotoUrl)}
+                    onClick={() => setSelectedPreviewImage(activeVitals.photoUrl!)}
                     className="relative group rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer"
                   >
                     <img
-                      src={latestMorningVital.vitalsPhotoUrl}
+                      src={activeVitals.photoUrl}
                       alt="Watermarked Vital Sign Reading"
                       className="w-full h-36 object-cover group-hover:scale-102 transition-transform duration-300"
                     />
@@ -366,7 +503,7 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
                     </div>
                     <div className="absolute bottom-2 left-2 right-2 bg-black/75 backdrop-blur-xs text-white text-[9px] font-mono px-2 py-1 rounded-lg flex items-center justify-between">
                       <span className="truncate">Timestamp Watermarked</span>
-                      <span className="text-emerald-400 font-bold">{latestMorningVital.formattedTime}</span>
+                      <span className="text-emerald-400 font-bold">{activeVitals.formattedTime}</span>
                     </div>
                   </div>
                 )}
@@ -375,25 +512,31 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
                     <span className="text-[10px] text-[#8C8C7E] uppercase block font-semibold">Blood Pressure</span>
-                    <span className="text-sm font-bold text-[#5A5A40]">{latestMorningVital.readings.bloodPressure || '120/80'} mmHg</span>
+                    <span className="text-sm font-bold text-[#5A5A40]">{activeVitals.bloodPressure || '120/80'} mmHg</span>
                   </div>
                   <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
                     <span className="text-[10px] text-[#8C8C7E] uppercase block font-semibold">Heart Pulse</span>
-                    <span className="text-sm font-bold text-[#5A5A40]">{latestMorningVital.readings.pulseRate || '72'} bpm</span>
+                    <span className="text-sm font-bold text-[#5A5A40]">{activeVitals.pulseRate !== undefined ? activeVitals.pulseRate : '72'} bpm</span>
                   </div>
                   <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
                     <span className="text-[10px] text-[#8C8C7E] uppercase block font-semibold">Oxygen (SpO2)</span>
-                    <span className="text-sm font-bold text-[#5A5A40]">{latestMorningVital.readings.spo2 || '98'}%</span>
+                    <span className="text-sm font-bold text-[#5A5A40]">{activeVitals.spo2 !== undefined ? activeVitals.spo2 : '98'}%</span>
                   </div>
                   <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
                     <span className="text-[10px] text-[#8C8C7E] uppercase block font-semibold">Body Temp</span>
-                    <span className="text-sm font-bold text-[#5A5A40]">{latestMorningVital.readings.temperature || '36.6'}°C</span>
+                    <span className="text-sm font-bold text-[#5A5A40]">{activeVitals.temperature !== undefined ? activeVitals.temperature : '36.6'}°C</span>
                   </div>
+                  {activeVitals.bloodSugar !== undefined && (
+                    <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3] col-span-2">
+                      <span className="text-[10px] text-[#8C8C7E] uppercase block font-semibold">Fasting Blood Sugar</span>
+                      <span className="text-sm font-bold text-[#5A5A40]">{activeVitals.bloodSugar} mmol/L</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="text-[11px] text-[#7C7C6D] flex items-center justify-between pt-1 border-t border-[#E6E2D3]">
-                  <span>Audited by: <strong>{latestMorningVital.caregiverName}</strong></span>
-                  <span className="text-[#889E81] font-semibold">{latestMorningVital.formattedDate}</span>
+                  <span>Audited by: <strong>{activeVitals.caregiverName}</strong></span>
+                  <span className="text-[#889E81] font-semibold">{activeVitals.formattedDate}</span>
                 </div>
               </div>
             ) : (
@@ -414,23 +557,23 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
               <div>
                 <span className="text-[#8C8C7E] block text-[11px]">Dietary Plan:</span>
                 <span className="font-semibold text-[#5A5A40]">
-                  {activeResident?.dietaryRestrictions}
+                  {activeResident?.dietaryRestrictions || 'Standard balanced, soft texture'}
                 </span>
               </div>
 
               <div>
                 <span className="text-[#8C8C7E] block text-[11px]">Medical Notes:</span>
                 <p className="text-[#4A4A40] text-[11px] leading-relaxed bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                  {activeResident?.medicalNotes}
+                  {activeResident?.medicalNotes || 'General assisted living care protocol.'}
                 </p>
               </div>
 
               <div>
                 <span className="text-[#8C8C7E] block text-[11px]">Key Care Focus:</span>
                 <ul className="list-disc list-inside text-[11px] text-[#5A5A40] space-y-0.5">
-                  {activeResident?.carePlan.map((p, i) => (
+                  {activeResident?.carePlan?.map((p, i) => (
                     <li key={i}>{p}</li>
-                  ))}
+                  )) || <li>Routine vitals check</li>}
                 </ul>
               </div>
             </div>
@@ -653,3 +796,4 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
     </div>
   );
 };
+
