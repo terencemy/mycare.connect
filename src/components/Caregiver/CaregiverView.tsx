@@ -265,10 +265,6 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
             </p>
           </div>
         </div>
-        <div className="text-right hidden sm:block shrink-0">
-          <span className="text-xs font-semibold text-[#7C7C6D]">Shift Efficiency</span>
-          <div className="text-base font-bold text-[#5A5A40]">~35 mins saved/shift</div>
-        </div>
       </div>
 
       {/* Tabs */}
