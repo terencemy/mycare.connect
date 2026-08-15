@@ -19,25 +19,64 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIs
 const sanitizeSupabaseUrl = (url: string) => url.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
 const supabaseServer = createClient(sanitizeSupabaseUrl(RAW_SUPABASE_URL), SUPABASE_ANON_KEY);
 
+function toValidUuid(id?: string): string {
+  if (!id) return '00000000-0000-4000-8000-000000000001';
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(id)) return id;
+
+  let h1 = 0xdeadbeef, h2 = 0x41c64e6d, h3 = 0x9e3779b9, h4 = 0x85ebca6b;
+  for (let i = 0; i < id.length; i++) {
+    const ch = id.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+    h3 = Math.imul(h3 ^ ch, 2246822507);
+    h4 = Math.imul(h4 ^ ch, 3266489909);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 1597334677) ^ Math.imul(h3 ^ (h3 >>> 13), 2654435761);
+  h3 = Math.imul(h3 ^ (h3 >>> 16), 2654435761) ^ Math.imul(h4 ^ (h4 >>> 13), 1597334677);
+  h4 = Math.imul(h4 ^ (h4 >>> 16), 3266489909) ^ Math.imul(h1 ^ (h1 >>> 13), 2246822507);
+
+  const hex1 = (h1 >>> 0).toString(16).padStart(8, '0');
+  const hex2 = (h2 >>> 0).toString(16).padStart(8, '0');
+  const hex3 = (h3 >>> 0).toString(16).padStart(8, '0');
+  const hex4 = (h4 >>> 0).toString(16).padStart(8, '0');
+  const fullHex = (hex1 + hex2 + hex3 + hex4).slice(0, 32);
+
+  return [
+    fullHex.substring(0, 8),
+    fullHex.substring(8, 12),
+    '4' + fullHex.substring(13, 16),
+    'a' + fullHex.substring(17, 20),
+    fullHex.substring(20, 32),
+  ].join('-');
+}
+
 // Helper: Convert Resident object to Supabase column names
 function residentToDbRow(resident: Partial<Resident>) {
   return {
-    ...(resident.id ? { id: resident.id } : {}),
+    ...(resident.id ? { id: toValidUuid(resident.id) } : {}),
     full_name: resident.fullName,
     preferred_name: resident.preferredName || resident.fullName?.split(' ')[0],
     room_number: resident.roomNumber,
     bed_number: resident.bedNumber || 'Bed 01',
     age: resident.age || 80,
-    photo_url: resident.photoUrl || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=400&auto=format&fit=crop&q=80',
-    medical_notes: resident.medicalNotes || 'Assisted living care plan.',
-    care_plan: resident.carePlan || ['Routine care'],
+    avatar_url: resident.photoUrl || '',
+    photo_url: resident.photoUrl || '',
+    dietary_notes: resident.dietaryRestrictions || 'Standard balanced, soft texture',
     dietary_restrictions: resident.dietaryRestrictions || 'Standard balanced diet',
-    assigned_caregiver_name: resident.assignedCaregiverName || 'Caregiver Staff',
+    primary_contact_name: resident.familyContactName || 'Family Member',
+    primary_contact_phone: resident.familyContactPhone || '',
+    primary_contact_relationship: resident.familyContactRelation || 'Family Member',
     family_contact_name: resident.familyContactName || 'Family Member',
     family_contact_relation: resident.familyContactRelation || 'Family Member',
     family_contact_email: resident.familyContactEmail || '',
     family_contact_phone: resident.familyContactPhone || '',
+    medical_notes: resident.medicalNotes || 'Assisted living care plan.',
+    care_plan: resident.carePlan || ['Routine care'],
+    assigned_caregiver_name: resident.assignedCaregiverName || 'Caregiver Staff',
     admission_date: resident.admissionDate || new Date().toISOString().split('T')[0],
+    is_active: true,
   };
 }
 
@@ -50,16 +89,16 @@ function dbRowToResident(row: any): Resident {
     roomNumber: String(row.room_number || row.roomNumber || '101'),
     bedNumber: row.bed_number || row.bedNumber || 'Bed 01',
     age: Number(row.age) || 80,
-    photoUrl: row.photo_url || row.photoUrl || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=400&auto=format&fit=crop&q=80',
+    photoUrl: row.avatar_url || row.photo_url || row.photoUrl || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=400&auto=format&fit=crop&q=80',
     medicalNotes: row.medical_notes || row.medicalNotes || '',
     carePlan: Array.isArray(row.care_plan) ? row.care_plan : (row.carePlan || ['Routine vitals check']),
-    dietaryRestrictions: row.dietary_restrictions || row.dietaryRestrictions || 'Standard balanced',
+    dietaryRestrictions: row.dietary_notes || row.dietary_restrictions || row.dietaryRestrictions || 'Standard balanced',
     assignedCaregiverId: row.assigned_caregiver_id || row.assignedCaregiverId || 'user_care_1',
     assignedCaregiverName: row.assigned_caregiver_name || row.assignedCaregiverName || 'Caregiver Staff',
-    familyContactName: row.family_contact_name || row.familyContactName || 'Family Contact',
-    familyContactRelation: row.family_contact_relation || row.familyContactRelation || 'Family Member',
+    familyContactName: row.primary_contact_name || row.family_contact_name || row.familyContactName || 'Family Contact',
+    familyContactRelation: row.primary_contact_relationship || row.family_contact_relation || row.familyContactRelation || 'Family Member',
     familyContactEmail: row.family_contact_email || row.familyContactEmail || '',
-    familyContactPhone: row.family_contact_phone || row.familyContactPhone || '',
+    familyContactPhone: row.primary_contact_phone || row.family_contact_phone || row.familyContactPhone || '',
     admissionDate: row.admission_date || row.admissionDate || new Date().toISOString().split('T')[0],
   };
 }
