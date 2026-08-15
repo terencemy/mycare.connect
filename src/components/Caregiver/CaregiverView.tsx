@@ -31,6 +31,8 @@ import {
   Sparkle,
   Calendar,
   Users,
+  X,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface CaregiverViewProps {
@@ -41,39 +43,6 @@ interface CaregiverViewProps {
   morningVitals: MorningVitalsRecord[];
   onSaveMorningVitals: (record: Partial<MorningVitalsRecord>) => Promise<void>;
 }
-
-const SAMPLE_MEDIA_OPTIONS = [
-  {
-    title: 'Morning Garden & Tea',
-    url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=80',
-    type: 'image' as const,
-    label: 'Courtyard Garden',
-  },
-  {
-    title: 'Watercolor Art Session',
-    url: 'https://images.unsplash.com/photo-1581579438747-1dc8d17bbce4?w=800&auto=format&fit=crop&q=80',
-    type: 'image' as const,
-    label: 'Art Therapy',
-  },
-  {
-    title: 'Chess & Brain Games',
-    url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=800&auto=format&fit=crop&q=80',
-    type: 'image' as const,
-    label: 'Recreational Lounge',
-  },
-  {
-    title: 'Physiotherapy & Mobility',
-    url: 'https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?w=800&auto=format&fit=crop&q=80',
-    type: 'image' as const,
-    label: 'Rehab Gym',
-  },
-  {
-    title: 'Afternoon Music & Song',
-    url: 'https://images.unsplash.com/photo-1516307365426-bea591f05011?w=800&auto=format&fit=crop&q=80',
-    type: 'image' as const,
-    label: 'Music Corner',
-  },
-];
 
 const AVAILABLE_ACTIVITIES = [
   'Courtyard Gardening 🌿',
@@ -114,7 +83,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
   }, [residents, selectedResident]);
 
   // 2. Media Upload State
-  const [mediaUrl, setMediaUrl] = useState<string>(SAMPLE_MEDIA_OPTIONS[0].url);
+  const [mediaUrl, setMediaUrl] = useState<string>('');
   const [mediaBase64, setMediaBase64] = useState<string>('');
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [isUploading, setIsUploading] = useState(false);
@@ -294,7 +263,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
           }`}
         >
           <Camera className="w-4 h-4 text-[#889E81]" />
-          <span>New 1-Click Care Log</span>
+          <span>Care Log</span>
         </button>
         <button
           id="caregiver-tab-history"
@@ -435,71 +404,81 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                   <Camera className="w-4 h-4 text-[#889E81]" />
                   <span>2. One-Click Photo / Video</span>
                 </span>
-                <span className="text-[11px] text-[#7C7C6D]">Instant AI Vision</span>
+                <span className="text-[11px] text-[#7C7C6D]">Optional</span>
               </label>
 
-              {/* Media Preview Box */}
-              <div className="relative aspect-video rounded-2xl overflow-hidden bg-[#2D2D24] border border-[#E6E2D3] group">
-                <img
-                  src={mediaUrl}
-                  alt="Resident Moment"
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-end p-3">
-                  <div className="text-white text-xs">
-                    <span className="font-semibold">{selectedResident?.fullName}</span>
-                    <span className="text-white/80 text-[11px] block">
-                      Room {selectedResident?.roomNumber} &bull; {selectedResident?.bedNumber}
-                    </span>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept="image/*,video/*"
+                className="hidden"
+              />
+
+              {mediaUrl || mediaBase64 ? (
+                /* Uploaded Attachment Card */
+                <div className="p-3 bg-[#FAF9F6] rounded-2xl border border-[#889E81]/40 flex items-center justify-between">
+                  <div className="flex items-center space-x-3 min-w-0">
+                    {mediaType === 'image' ? (
+                      <img
+                        src={mediaUrl || mediaBase64}
+                        alt="Attached media"
+                        className="w-12 h-12 rounded-xl object-cover border border-[#E6E2D3] shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-xl bg-[#EBF1EA] text-[#5A5A40] flex items-center justify-center shrink-0 border border-[#889E81]/30 font-bold text-xs">
+                        VIDEO
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-[#5A5A40] truncate">
+                        Media Attached
+                      </div>
+                      <div className="text-[11px] text-[#7C7C6D]">
+                        Ready for AI multi-modal vision
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-
-              {/* Upload & Quick Sample Buttons */}
-              <div className="flex gap-2">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileUpload}
-                  accept="image/*,video/*"
-                  className="hidden"
-                />
-                <button
-                  id="caregiver-upload-media-btn"
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 py-2.5 px-3 bg-[#889E81] hover:bg-[#788E71] text-white rounded-2xl text-xs font-bold flex items-center justify-center space-x-2 transition-all shadow-xs cursor-pointer"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>{isUploading ? 'Loading File...' : 'Upload Photo / Video'}</span>
-                </button>
-              </div>
-
-              {/* Quick Preset Moments */}
-              <div>
-                <span className="text-[11px] font-semibold text-[#7C7C6D] block mb-1.5">
-                  Or select a facility activity moment:
-                </span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {SAMPLE_MEDIA_OPTIONS.map((item, idx) => (
+                  <div className="flex items-center space-x-2 shrink-0">
                     <button
-                      key={idx}
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-2.5 py-1 text-[11px] font-semibold text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-lg hover:bg-[#F0ECE2] transition-colors cursor-pointer"
+                    >
+                      Change
+                    </button>
+                    <button
                       type="button"
                       onClick={() => {
-                        setMediaUrl(item.url);
+                        setMediaUrl('');
                         setMediaBase64('');
                       }}
-                      className={`text-left p-2 rounded-xl text-[11px] border truncate transition-all cursor-pointer ${
-                        mediaUrl === item.url
-                          ? 'border-[#889E81] bg-[#EBF1EA] font-bold text-[#5A5A40]'
-                          : 'border-[#E6E2D3] text-[#7C7C6D] hover:bg-[#FAF9F6]'
-                      }`}
+                      className="p-1 text-[#7C7C6D] hover:text-[#C27D60] rounded-lg hover:bg-white transition-colors cursor-pointer"
+                      title="Remove media"
                     >
-                      {item.title}
+                      <X className="w-4 h-4" />
                     </button>
-                  ))}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* Empty Upload Dropzone / Button */
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-5 border-2 border-dashed border-[#E6E2D3] hover:border-[#889E81] bg-[#FAF9F6] hover:bg-[#F0ECE2]/40 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer transition-all space-y-2 group"
+                >
+                  <div className="w-10 h-10 rounded-full bg-[#EBF1EA] text-[#889E81] flex items-center justify-center group-hover:scale-105 transition-transform">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-[#5A5A40]">
+                      {isUploading ? 'Processing File...' : 'Upload Photo or Video (Optional)'}
+                    </div>
+                    <div className="text-[11px] text-[#7C7C6D] mt-0.5">
+                      Click to choose an activity photo/video or drag &amp; drop
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

@@ -25,7 +25,10 @@ import {
   Eye,
   FileCheck,
   Calendar,
-  Sparkle
+  Sparkle,
+  Monitor,
+  Thermometer,
+  Gauge
 } from 'lucide-react';
 
 interface MorningVitalsModuleProps {
@@ -641,25 +644,44 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
 
               {/* Presets Grid */}
               <div className="grid grid-cols-2 gap-2">
-                {SAMPLE_VITALS_PRESETS.map((preset, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleSelectPreset(idx)}
-                    className={`p-2.5 rounded-xl border text-left text-xs transition-all cursor-pointer flex items-center space-x-2 ${
-                      selectedPresetIndex === idx
-                        ? 'bg-[#F7F5F0] border-[#889E81] font-bold text-[#5A5A40] shadow-2xs'
-                        : 'bg-[#FAF9F6] border-[#E6E2D3] text-[#7C7C6D] hover:bg-white'
-                    }`}
-                  >
-                    <img
-                      src={preset.imageUrl}
-                      alt={preset.label}
-                      className="w-7 h-7 rounded-lg object-cover ring-1 ring-[#E6E2D3] shrink-0"
-                    />
-                    <span className="truncate text-[11px]">{preset.label}</span>
-                  </button>
-                ))}
+                {SAMPLE_VITALS_PRESETS.map((preset, idx) => {
+                  const getPresetIcon = () => {
+                    switch (idx) {
+                      case 0:
+                        return <Heart className="w-3.5 h-3.5 text-[#889E81]" />;
+                      case 1:
+                        return <Activity className="w-3.5 h-3.5 text-[#889E81]" />;
+                      case 2:
+                        return <Monitor className="w-3.5 h-3.5 text-[#889E81]" />;
+                      case 3:
+                        return <Thermometer className="w-3.5 h-3.5 text-[#889E81]" />;
+                      default:
+                        return <Gauge className="w-3.5 h-3.5 text-[#889E81]" />;
+                    }
+                  };
+
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleSelectPreset(idx)}
+                      className={`p-2.5 rounded-xl border text-left text-xs transition-all cursor-pointer flex items-center space-x-2.5 ${
+                        selectedPresetIndex === idx
+                          ? 'bg-[#F7F5F0] border-[#889E81] font-bold text-[#5A5A40] shadow-2xs'
+                          : 'bg-[#FAF9F6] border-[#E6E2D3] text-[#7C7C6D] hover:bg-white'
+                      }`}
+                    >
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
+                        selectedPresetIndex === idx
+                          ? 'bg-white border-[#889E81]/40'
+                          : 'bg-[#EBF1EA] border-[#889E81]/20'
+                      }`}>
+                        {getPresetIcon()}
+                      </div>
+                      <span className="truncate text-[11px]">{preset.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
