@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
+import { createClient } from '@supabase/supabase-js';
 import { INITIAL_RESIDENTS, INITIAL_CARE_LOGS, INITIAL_FAMILY_MESSAGES, INITIAL_USERS, INITIAL_MORNING_VITALS } from './src/data/mockData';
 import { CareLog, FamilyMessage, Resident, UserProfile, MorningVitalsRecord } from './src/types';
 
@@ -11,6 +12,57 @@ let careLogs: CareLog[] = [...INITIAL_CARE_LOGS];
 let familyMessages: FamilyMessage[] = [...INITIAL_FAMILY_MESSAGES];
 let users: UserProfile[] = [...INITIAL_USERS];
 let morningVitals: MorningVitalsRecord[] = [...INITIAL_MORNING_VITALS];
+
+// Supabase Server Client Setup
+const RAW_SUPABASE_URL = process.env.SUPABASE_URL || 'https://jjaduhfcetzhzwmcjuri.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqYWR1aGZjZXR6aHp3bWNqdXJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2OTYwMDksImV4cCI6MjEwMjI3MjAwOX0.eUCwj5RC-Tixnte7RrEDyUQ3FbY_WufP3MaVkQVsaek';
+const sanitizeSupabaseUrl = (url: string) => url.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+const supabaseServer = createClient(sanitizeSupabaseUrl(RAW_SUPABASE_URL), SUPABASE_ANON_KEY);
+
+// Helper: Convert Resident object to Supabase column names
+function residentToDbRow(resident: Partial<Resident>) {
+  return {
+    ...(resident.id ? { id: resident.id } : {}),
+    full_name: resident.fullName,
+    preferred_name: resident.preferredName || resident.fullName?.split(' ')[0],
+    room_number: resident.roomNumber,
+    bed_number: resident.bedNumber || 'Bed 01',
+    age: resident.age || 80,
+    photo_url: resident.photoUrl || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=400&auto=format&fit=crop&q=80',
+    medical_notes: resident.medicalNotes || 'Assisted living care plan.',
+    care_plan: resident.carePlan || ['Routine care'],
+    dietary_restrictions: resident.dietaryRestrictions || 'Standard balanced diet',
+    assigned_caregiver_name: resident.assignedCaregiverName || 'Caregiver Staff',
+    family_contact_name: resident.familyContactName || 'Family Member',
+    family_contact_relation: resident.familyContactRelation || 'Family Member',
+    family_contact_email: resident.familyContactEmail || '',
+    family_contact_phone: resident.familyContactPhone || '',
+    admission_date: resident.admissionDate || new Date().toISOString().split('T')[0],
+  };
+}
+
+// Helper: Convert Supabase row to Resident object
+function dbRowToResident(row: any): Resident {
+  return {
+    id: String(row.id),
+    fullName: row.full_name || row.fullName || 'Resident',
+    preferredName: row.preferred_name || row.preferredName || row.full_name?.split(' ')[0] || 'Resident',
+    roomNumber: String(row.room_number || row.roomNumber || '101'),
+    bedNumber: row.bed_number || row.bedNumber || 'Bed 01',
+    age: Number(row.age) || 80,
+    photoUrl: row.photo_url || row.photoUrl || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=400&auto=format&fit=crop&q=80',
+    medicalNotes: row.medical_notes || row.medicalNotes || '',
+    carePlan: Array.isArray(row.care_plan) ? row.care_plan : (row.carePlan || ['Routine vitals check']),
+    dietaryRestrictions: row.dietary_restrictions || row.dietaryRestrictions || 'Standard balanced',
+    assignedCaregiverId: row.assigned_caregiver_id || row.assignedCaregiverId || 'user_care_1',
+    assignedCaregiverName: row.assigned_caregiver_name || row.assignedCaregiverName || 'Caregiver Staff',
+    familyContactName: row.family_contact_name || row.familyContactName || 'Family Contact',
+    familyContactRelation: row.family_contact_relation || row.familyContactRelation || 'Family Member',
+    familyContactEmail: row.family_contact_email || row.familyContactEmail || '',
+    familyContactPhone: row.family_contact_phone || row.familyContactPhone || '',
+    admissionDate: row.admission_date || row.admissionDate || new Date().toISOString().split('T')[0],
+  };
+}
 
 // Lazy Gemini client helper
 let genAiClient: GoogleGenAI | null = null;
@@ -48,7 +100,31 @@ async function startServer() {
   });
 
   // Residents Endpoints
-  app.get('/api/residents', (req, res) => {
+  app.get('/api/residents', async (req, res) => {
+    try {
+      // Attempt to load from live Supabase if connected
+      const { data, error } = await supabaseServer
+        .from('residents')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        const supabaseResidents = data.map(dbRowToResident);
+        // Merge Supabase residents with in-memory residents
+        const merged = [...residents];
+        supabaseResidents.forEach((sr) => {
+          const idx = merged.findIndex((m) => m.id === sr.id || (m.fullName === sr.fullName && m.roomNumber === sr.roomNumber));
+          if (idx !== -1) {
+            merged[idx] = { ...merged[idx], ...sr };
+          } else {
+            merged.push(sr);
+          }
+        });
+        residents = merged;
+      }
+    } catch (e) {
+      console.warn('Supabase fetch note:', e);
+    }
     res.json(residents);
   });
 
@@ -60,22 +136,63 @@ async function startServer() {
     res.json(resident);
   });
 
-  app.post('/api/residents', (req, res) => {
+  app.post('/api/residents', async (req, res) => {
     const newResident: Resident = {
-      id: `res_${Date.now()}`,
+      id: req.body.id || `res_${Date.now()}`,
       ...req.body,
     };
     residents.push(newResident);
+
+    // Asynchronously upsert to Supabase
+    try {
+      const dbRow = residentToDbRow(newResident);
+      const { error } = await supabaseServer.from('residents').upsert([dbRow], { onConflict: 'id' });
+      if (error) {
+        console.warn('Supabase save note:', error.message);
+      }
+    } catch (e) {
+      console.warn('Supabase save error:', e);
+    }
+
     res.status(201).json(newResident);
   });
 
-  app.put('/api/residents/:id', (req, res) => {
+  app.put('/api/residents/:id', async (req, res) => {
     const index = residents.findIndex((r) => r.id === req.params.id);
     if (index === -1) {
       return res.status(404).json({ error: 'Resident not found' });
     }
     residents[index] = { ...residents[index], ...req.body };
-    res.json(residents[index]);
+    const updatedResident = residents[index];
+
+    // Asynchronously update in Supabase
+    try {
+      const dbRow = residentToDbRow(updatedResident);
+      await supabaseServer.from('residents').upsert([dbRow], { onConflict: 'id' });
+    } catch (e) {
+      console.warn('Supabase update error:', e);
+    }
+
+    res.json(updatedResident);
+  });
+
+  // Supabase Bulk Sync Route
+  app.post('/api/residents/sync-supabase', async (req, res) => {
+    try {
+      const rows = residents.map(residentToDbRow);
+      const { data, error } = await supabaseServer
+        .from('residents')
+        .upsert(rows, { onConflict: 'id' })
+        .select();
+
+      if (error) {
+        return res.status(400).json({ success: false, error: error.message });
+      }
+
+      res.json({ success: true, count: data?.length || rows.length });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'Failed to sync with Supabase' });
+    }
   });
 
   // Care Logs Endpoints

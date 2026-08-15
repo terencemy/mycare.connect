@@ -12,6 +12,11 @@ import {
   MorningVitalsRecord,
 } from './types';
 import { INITIAL_USERS, INITIAL_RESIDENTS, INITIAL_CARE_LOGS, INITIAL_FAMILY_MESSAGES, INITIAL_MORNING_VITALS } from './data/mockData';
+import {
+  syncResidentToSupabase,
+  updateResidentInSupabase,
+  fetchResidentsFromSupabase,
+} from './lib/supabaseClient';
 
 export default function App() {
   const [users, setUsers] = useState<UserProfile[]>(() => {
@@ -50,7 +55,7 @@ export default function App() {
     });
   };
 
-  // Sync initial data from backend API
+  // Sync initial data from backend API and Supabase
   useEffect(() => {
     async function loadBackendData() {
       try {
@@ -61,10 +66,32 @@ export default function App() {
           fetch('/api/vitals/morning-records'),
         ]);
 
+        let loadedResidents: Resident[] = INITIAL_RESIDENTS;
+
         if (resRes.ok) {
           const resData = await resRes.json();
-          setResidents(resData);
+          if (Array.isArray(resData) && resData.length > 0) {
+            loadedResidents = resData;
+          }
         }
+
+        // Direct Supabase pull fallback/check
+        try {
+          const supaResult = await fetchResidentsFromSupabase();
+          if (supaResult.success && supaResult.residents.length > 0) {
+            const supaMap = new Map<string, Resident>();
+            loadedResidents.forEach((r) => supaMap.set(r.id, r));
+            supaResult.residents.forEach((sr) => {
+              supaMap.set(sr.id, { ...(supaMap.get(sr.id) || {}), ...sr });
+            });
+            loadedResidents = Array.from(supaMap.values());
+          }
+        } catch (supaErr) {
+          console.warn('Client Supabase direct sync note:', supaErr);
+        }
+
+        setResidents(loadedResidents);
+
         if (logsRes.ok) {
           const logsData = await logsRes.json();
           setCareLogs(logsData);
@@ -245,22 +272,41 @@ export default function App() {
   // Handler: Admit new resident
   const handleAddResident = async (newRes: Partial<Resident>) => {
     try {
-      const response = await fetch('/api/residents', {
+      const residentId = newRes.id || `res_${Date.now()}`;
+      const residentPayload: Resident = {
+        id: residentId,
+        fullName: newRes.fullName || 'Resident',
+        preferredName: newRes.preferredName || newRes.fullName?.split(' ')[0] || 'Resident',
+        roomNumber: newRes.roomNumber || '101',
+        bedNumber: newRes.bedNumber || 'Bed 01',
+        age: newRes.age || 80,
+        dietaryRestrictions: newRes.dietaryRestrictions || 'Standard balanced, soft texture',
+        medicalNotes: newRes.medicalNotes || 'Assisted living general care plan.',
+        carePlan: newRes.carePlan || ['Routine vitals check', 'Nutritional monitoring', 'Hydration schedule'],
+        assignedCaregiverId: newRes.assignedCaregiverId || 'user_care_1',
+        assignedCaregiverName: newRes.assignedCaregiverName || 'Caregiver Staff',
+        familyContactName: newRes.familyContactName || 'Primary Family Contact',
+        familyContactRelation: newRes.familyContactRelation || 'Family Member',
+        familyContactEmail: newRes.familyContactEmail || '',
+        familyContactPhone: newRes.familyContactPhone || '',
+        photoUrl: newRes.photoUrl || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=400&auto=format&fit=crop&q=80',
+        admissionDate: newRes.admissionDate || new Date().toISOString().split('T')[0],
+      };
+
+      // Optimistically update local state immediately
+      setResidents((prev) => [...prev, residentPayload]);
+
+      // Direct write to Supabase
+      syncResidentToSupabase(residentPayload).catch((e) =>
+        console.warn('Direct Supabase resident sync note:', e)
+      );
+
+      // Write to backend API
+      fetch('/api/residents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRes),
-      });
-
-      if (response.ok) {
-        const created = await response.json();
-        setResidents((prev) => [...prev, created]);
-      } else {
-        const fallback: Resident = {
-          id: `res_${Date.now()}`,
-          ...(newRes as Resident),
-        };
-        setResidents((prev) => [...prev, fallback]);
-      }
+        body: JSON.stringify(residentPayload),
+      }).catch((e) => console.warn('Server API save note:', e));
     } catch (err) {
       console.error('Failed to add resident:', err);
     }
@@ -269,22 +315,22 @@ export default function App() {
   // Handler: Update existing resident name, bed register, and details
   const handleUpdateResident = async (residentId: string, updatedFields: Partial<Resident>) => {
     try {
-      const response = await fetch(`/api/residents/${residentId}`, {
+      // Optimistically update local state
+      setResidents((prev) =>
+        prev.map((r) => (r.id === residentId ? { ...r, ...updatedFields } : r))
+      );
+
+      // Direct write to Supabase
+      updateResidentInSupabase(residentId, updatedFields).catch((e) =>
+        console.warn('Direct Supabase resident update note:', e)
+      );
+
+      // Write to backend API
+      fetch(`/api/residents/${residentId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedFields),
-      });
-
-      if (response.ok) {
-        const updated: Resident = await response.json();
-        setResidents((prev) =>
-          prev.map((r) => (r.id === residentId ? updated : r))
-        );
-      } else {
-        setResidents((prev) =>
-          prev.map((r) => (r.id === residentId ? { ...r, ...updatedFields } : r))
-        );
-      }
+      }).catch((e) => console.warn('Server API update note:', e));
 
       // Keep careLogs and familyMessages sync'd with updated resident details
       if (updatedFields.fullName || updatedFields.roomNumber || updatedFields.bedNumber) {
@@ -315,9 +361,6 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to update resident:', err);
-      setResidents((prev) =>
-        prev.map((r) => (r.id === residentId ? { ...r, ...updatedFields } : r))
-      );
     }
   };
 

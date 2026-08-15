@@ -11,12 +11,23 @@ export interface UserProfile {
   title?: string;
 }
 
+export const BED_IDENTIFIER_OPTIONS = [
+  'Bed 01',
+  'Bed 02',
+  'Bed 03',
+  'Bed 04',
+  'Bed 05',
+  'Single Room',
+] as const;
+
+export type BedIdentifier = (typeof BED_IDENTIFIER_OPTIONS)[number] | string;
+
 export interface Resident {
   id: string;
   fullName: string;
   preferredName: string;
   roomNumber: string;
-  bedNumber: string; // e.g., 'Bed A', 'Bed B'
+  bedNumber: string; // e.g., 'Bed 01', 'Bed 02', 'Bed 03', 'Bed 04', 'Bed 05', 'Single Room'
   age: number;
   photoUrl: string;
   admissionDate: string;

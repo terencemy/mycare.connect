@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { supabase, SUPABASE_URL } from '../../lib/supabaseClient';
+import { supabase, SUPABASE_URL, syncAllResidentsToSupabase } from '../../lib/supabaseClient';
 import {
   Resident,
   CareLog,
   FamilyMessage,
   UserProfile,
   MorningVitalsRecord,
+  BED_IDENTIFIER_OPTIONS,
 } from '../../types';
 import {
   ShieldAlert,
@@ -30,6 +31,10 @@ import {
   Globe,
   Key,
   RefreshCw,
+  Mail,
+  Phone,
+  CloudCheck,
+  UploadCloud,
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -64,11 +69,41 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [supabaseTestStatus, setSupabaseTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [supabaseTestMsg, setSupabaseTestMsg] = useState<string>('');
 
+  // Bulk Supabase Sync State & Feedback
+  const [isSyncingAllSupabase, setIsSyncingAllSupabase] = useState(false);
+  const [syncToast, setSyncToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const handleSyncAllResidents = async () => {
+    setIsSyncingAllSupabase(true);
+    try {
+      const result = await syncAllResidentsToSupabase(residents);
+      if (result.success) {
+        setSyncToast({
+          type: 'success',
+          message: `Successfully synchronized ${result.count || residents.length} residents to your Supabase PostgreSQL table!`,
+        });
+      } else {
+        setSyncToast({
+          type: 'error',
+          message: `Supabase sync notice: ${result.error}`,
+        });
+      }
+    } catch (err: any) {
+      setSyncToast({
+        type: 'error',
+        message: `Sync failed: ${err?.message || 'Network error'}`,
+      });
+    } finally {
+      setIsSyncingAllSupabase(false);
+      setTimeout(() => setSyncToast(null), 5000);
+    }
+  };
+
   // Inline Editing in Interception & Triage Pane
   const [isEditingInterceptionTarget, setIsEditingInterceptionTarget] = useState(false);
   const [editInterceptionResidentName, setEditInterceptionResidentName] = useState('');
   const [editInterceptionRoom, setEditInterceptionRoom] = useState('');
-  const [editInterceptionBed, setEditInterceptionBed] = useState('Bed A');
+  const [editInterceptionBed, setEditInterceptionBed] = useState('Bed 01');
   const [isSavingInterceptionEdit, setIsSavingInterceptionEdit] = useState(false);
 
   // Edit Resident Modal in Directory
@@ -76,12 +111,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [editFullName, setEditFullName] = useState('');
   const [editPreferredName, setEditPreferredName] = useState('');
   const [editRoomNumber, setEditRoomNumber] = useState('');
-  const [editBedNumber, setEditBedNumber] = useState('Bed A');
+  const [editBedNumber, setEditBedNumber] = useState('Bed 01');
   const [editAge, setEditAge] = useState(80);
   const [editDiet, setEditDiet] = useState('');
   const [editCaregiverName, setEditCaregiverName] = useState('');
   const [editFamilyName, setEditFamilyName] = useState('');
+  const [editFamilyRelation, setEditFamilyRelation] = useState('Family Member');
   const [editFamilyEmail, setEditFamilyEmail] = useState('');
+  const [editFamilyPhone, setEditFamilyPhone] = useState('');
 
   const handleTestSupabase = async () => {
     try {
@@ -116,12 +153,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [newFullName, setNewFullName] = useState('');
   const [newPreferredName, setNewPreferredName] = useState('');
   const [newRoomNumber, setNewRoomNumber] = useState('');
-  const [newBedNumber, setNewBedNumber] = useState('Bed A');
+  const [newBedNumber, setNewBedNumber] = useState('Bed 01');
   const [newAge, setNewAge] = useState(80);
   const [newDiet, setNewDiet] = useState('Standard balanced, soft texture');
   const [newMedicalNotes, setNewMedicalNotes] = useState('');
+  const [newCaregiverName, setNewCaregiverName] = useState('Caregiver Staff');
   const [newFamilyName, setNewFamilyName] = useState('');
+  const [newFamilyRelation, setNewFamilyRelation] = useState('Family Member');
   const [newFamilyEmail, setNewFamilyEmail] = useState('');
+  const [newFamilyPhone, setNewFamilyPhone] = useState('');
 
   // When a message is selected, initialize response draft with AI suggested response if available
   const handleSelectMessage = (msg: FamilyMessage) => {
@@ -134,7 +174,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     if (!selectedMessage) return;
     setEditInterceptionResidentName(selectedMessage.residentFullName);
     setEditInterceptionRoom(selectedMessage.roomNumber);
-    setEditInterceptionBed(selectedMessage.bedNumber || 'Bed A');
+    setEditInterceptionBed(selectedMessage.bedNumber || 'Bed 01');
     setIsEditingInterceptionTarget(true);
   };
 
@@ -176,12 +216,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     setEditFullName(r.fullName);
     setEditPreferredName(r.preferredName || '');
     setEditRoomNumber(r.roomNumber);
-    setEditBedNumber(r.bedNumber || 'Bed A');
+    setEditBedNumber(r.bedNumber || 'Bed 01');
     setEditAge(r.age || 80);
     setEditDiet(r.dietaryRestrictions || '');
     setEditCaregiverName(r.assignedCaregiverName || '');
     setEditFamilyName(r.familyContactName || '');
+    setEditFamilyRelation(r.familyContactRelation || 'Family Member');
     setEditFamilyEmail(r.familyContactEmail || '');
+    setEditFamilyPhone(r.familyContactPhone || '');
   };
 
   const handleSaveResidentModal = async (e: React.FormEvent) => {
@@ -195,10 +237,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         roomNumber: editRoomNumber.trim(),
         bedNumber: editBedNumber.trim(),
         age: editAge,
-        dietaryRestrictions: editDiet,
-        assignedCaregiverName: editCaregiverName || 'Caregiver Staff',
-        familyContactName: editFamilyName || 'Family Member',
-        familyContactEmail: editFamilyEmail,
+        dietaryRestrictions: editDiet.trim(),
+        assignedCaregiverName: editCaregiverName.trim() || 'Caregiver Staff',
+        familyContactName: editFamilyName.trim() || 'Family Member',
+        familyContactRelation: editFamilyRelation.trim() || 'Family Member',
+        familyContactEmail: editFamilyEmail.trim(),
+        familyContactPhone: editFamilyPhone.trim(),
       });
     }
     setEditingResident(null);
@@ -214,30 +258,40 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   const handleCreateResident = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFullName || !newRoomNumber) return;
+    if (!newFullName.trim() || !newRoomNumber.trim()) return;
 
     await onAddResident({
-      fullName: newFullName,
-      preferredName: newPreferredName || newFullName.split(' ')[0],
-      roomNumber: newRoomNumber,
-      bedNumber: newBedNumber,
+      fullName: newFullName.trim(),
+      preferredName: newPreferredName.trim() || newFullName.trim().split(' ')[0],
+      roomNumber: newRoomNumber.trim(),
+      bedNumber: newBedNumber.trim(),
       age: newAge,
-      dietaryRestrictions: newDiet,
-      medicalNotes: newMedicalNotes || 'Assisted living general care plan.',
+      dietaryRestrictions: newDiet.trim() || 'Standard balanced, soft texture',
+      medicalNotes: newMedicalNotes.trim() || 'Assisted living general care plan.',
       carePlan: ['Routine vitals check', 'Nutritional monitoring', 'Hydration schedule'],
       assignedCaregiverId: 'user_care_1',
-      assignedCaregiverName: 'Caregiver Staff',
-      familyContactName: newFamilyName || 'Next of Kin',
-      familyContactRelation: 'Family Member',
-      familyContactEmail: newFamilyEmail || 'family@example.com',
-      familyContactPhone: '+1 (555) 019-2834',
+      assignedCaregiverName: newCaregiverName.trim() || 'Caregiver Staff',
+      familyContactName: newFamilyName.trim() || 'Primary Family Contact',
+      familyContactRelation: newFamilyRelation.trim() || 'Family Member',
+      familyContactEmail: newFamilyEmail.trim(),
+      familyContactPhone: newFamilyPhone.trim(),
       photoUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=400&auto=format&fit=crop&q=80',
       admissionDate: new Date().toISOString().split('T')[0],
     });
 
     setIsAddResidentModalOpen(false);
     setNewFullName('');
+    setNewPreferredName('');
     setNewRoomNumber('');
+    setNewBedNumber('Bed 01');
+    setNewAge(80);
+    setNewDiet('Standard balanced, soft texture');
+    setNewMedicalNotes('');
+    setNewCaregiverName('Caregiver Staff');
+    setNewFamilyName('');
+    setNewFamilyRelation('Family Member');
+    setNewFamilyEmail('');
+    setNewFamilyPhone('');
   };
 
   const pendingMessages = familyMessages.filter(
@@ -252,32 +306,38 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 -- 1. Enable UUID Extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2. Residents Table
+-- 2. Residents Table (Linked to Admin Interception & Directory)
 CREATE TABLE public.residents (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id TEXT PRIMARY KEY,
     full_name TEXT NOT NULL,
     preferred_name TEXT,
     room_number TEXT NOT NULL,
-    bed_number TEXT NOT NULL, -- e.g., 'Bed A', 'Bed B'
-    age INT,
+    bed_number TEXT NOT NULL DEFAULT 'Bed 01', -- e.g., 'Bed 01', 'Bed 02', 'Bed 03', 'Bed 04', 'Bed 05', 'Single Room'
+    age INT DEFAULT 80,
     photo_url TEXT,
     medical_notes TEXT,
     care_plan JSONB DEFAULT '[]'::jsonb,
-    dietary_restrictions TEXT,
-    assigned_caregiver_id UUID REFERENCES auth.users(id),
+    dietary_restrictions TEXT DEFAULT 'Standard balanced diet',
+    assigned_caregiver_name TEXT DEFAULT 'Caregiver Staff',
+    assigned_caregiver_id TEXT,
+    family_contact_name TEXT DEFAULT 'Primary Contact',
+    family_contact_relation TEXT DEFAULT 'Family Member',
+    family_contact_email TEXT,
+    family_contact_phone TEXT,
+    admission_date DATE DEFAULT CURRENT_DATE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- 3. Care Logs Table (One-click media + Multimodal AI output)
 CREATE TABLE public.care_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    resident_id UUID NOT NULL REFERENCES public.residents(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY,
+    resident_id TEXT NOT NULL REFERENCES public.residents(id) ON DELETE CASCADE,
     resident_full_name TEXT NOT NULL,
     room_number TEXT NOT NULL,
     bed_number TEXT NOT NULL,
     media_url TEXT NOT NULL,
     media_type TEXT CHECK (media_type IN ('image', 'video')),
-    caregiver_id UUID REFERENCES auth.users(id),
+    caregiver_id TEXT,
     ai_generated_family_summary TEXT NOT NULL,
     clinical_staff_log TEXT,
     key_highlights JSONB DEFAULT '[]'::jsonb,
@@ -290,9 +350,9 @@ CREATE TABLE public.care_logs (
 
 -- 4. Family Messages Table (Intercepted direct to Admin Dashboard)
 CREATE TABLE public.family_messages (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    resident_id UUID NOT NULL REFERENCES public.residents(id) ON DELETE CASCADE,
-    family_user_id UUID REFERENCES auth.users(id),
+    id TEXT PRIMARY KEY,
+    resident_id TEXT NOT NULL REFERENCES public.residents(id) ON DELETE CASCADE,
+    family_user_id TEXT,
     family_name TEXT NOT NULL,
     family_relation TEXT,
     subject TEXT NOT NULL,
@@ -308,15 +368,22 @@ CREATE TABLE public.family_messages (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 5. Row Level Security (RLS)
+-- 5. Enable Row Level Security (RLS)
 ALTER TABLE public.residents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.care_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.family_messages ENABLE ROW LEVEL SECURITY;
 
--- Caregivers and Admins have full read/write; Families can only read their linked resident's care logs
-CREATE POLICY "Families can view linked resident logs" 
-ON public.care_logs FOR SELECT 
-USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident_id = care_logs.resident_id));
+-- 6. Grant read/write policies for anon key / authenticated clients
+CREATE POLICY "Allow public read on residents" ON public.residents FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on residents" ON public.residents FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on residents" ON public.residents FOR UPDATE USING (true);
+
+CREATE POLICY "Allow public read on care_logs" ON public.care_logs FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on care_logs" ON public.care_logs FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow public read on family_messages" ON public.family_messages FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on family_messages" ON public.family_messages FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on family_messages" ON public.family_messages FOR UPDATE USING (true);
 `;
 
   return (
@@ -641,7 +708,7 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
                       {isEditingInterceptionTarget ? (
                         <form
                           onSubmit={handleSaveInterceptionResidentEdit}
-                          className="flex flex-wrap items-center gap-1.5 p-2 bg-[#FAF9F6] rounded-xl border border-[#889E81] w-full"
+                          className="flex flex-wrap items-center gap-1.5 p-2.5 bg-[#FAF9F6] rounded-xl border border-[#889E81] w-full"
                         >
                           <div className="flex flex-col">
                             <span className="text-[10px] font-bold text-[#7C7C6D]">Resident Name:</span>
@@ -671,22 +738,22 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
                               onChange={(e) => setEditInterceptionBed(e.target.value)}
                               className="px-2 py-1 text-xs font-medium text-[#5A5A40] bg-white border border-[#E6E2D3] rounded-lg outline-none"
                             >
-                              <option value="Bed A">Bed A</option>
-                              <option value="Bed B">Bed B</option>
-                              <option value="Bed C">Bed C</option>
-                              <option value="Bed D">Bed D</option>
-                              <option value="Private Suite">Private Suite</option>
+                              {BED_IDENTIFIER_OPTIONS.map((bedOpt) => (
+                                <option key={bedOpt} value={bedOpt}>
+                                  {bedOpt}
+                                </option>
+                              ))}
                             </select>
                           </div>
                           <div className="flex items-end space-x-1 pt-3.5">
                             <button
                               type="submit"
                               disabled={isSavingInterceptionEdit}
-                              title="Save Changes"
+                              title="Save Changes to App & Supabase"
                               className="px-2.5 py-1 bg-[#889E81] text-white rounded-lg text-xs font-bold hover:bg-[#788E71] flex items-center space-x-1 cursor-pointer"
                             >
                               <Check className="w-3.5 h-3.5" />
-                              <span>{isSavingInterceptionEdit ? 'Saving...' : 'Save'}</span>
+                              <span>{isSavingInterceptionEdit ? 'Saving...' : 'Save & Sync'}</span>
                             </button>
                             <button
                               type="button"
@@ -700,24 +767,30 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
                           </div>
                         </form>
                       ) : (
-                        <div className="inline-flex items-center space-x-2 bg-[#FAF9F6] border border-[#E6E2D3] px-3 py-1.5 rounded-xl">
-                          <div className="flex items-center space-x-1.5 text-xs">
-                            <span className="text-[#8C8C7E]">Resident:</span>
-                            <strong className="text-[#5A5A40] font-bold">{selectedMessage.residentFullName}</strong>
-                            <span className="text-[#8C8C7E]">&bull;</span>
-                            <span className="text-[11px] font-bold text-[#5A5A40] bg-[#F0ECE2] px-2 py-0.5 rounded-md border border-[#E6E2D3]">
-                              Room {selectedMessage.roomNumber} &bull; {selectedMessage.bedNumber || 'Bed A'}
-                            </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="inline-flex items-center space-x-2 bg-[#FAF9F6] border border-[#E6E2D3] px-3 py-1.5 rounded-xl">
+                            <div className="flex items-center space-x-1.5 text-xs">
+                              <span className="text-[#8C8C7E]">Resident:</span>
+                              <strong className="text-[#5A5A40] font-bold">{selectedMessage.residentFullName}</strong>
+                              <span className="text-[#8C8C7E]">&bull;</span>
+                              <span className="text-[11px] font-bold text-[#5A5A40] bg-[#F0ECE2] px-2 py-0.5 rounded-md border border-[#E6E2D3]">
+                                Room {selectedMessage.roomNumber} &bull; {selectedMessage.bedNumber || 'Bed 01'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleStartInterceptionEdit}
+                              title="Edit Resident Name & Bed Register"
+                              className="p-1 text-[#889E81] hover:text-[#5A5A40] hover:bg-[#E6E2D3]/60 rounded-md transition-colors cursor-pointer flex items-center space-x-1 text-[11px] font-bold"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                              <span>Edit Target</span>
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={handleStartInterceptionEdit}
-                            title="Edit Resident Name & Bed Register"
-                            className="p-1 text-[#889E81] hover:text-[#5A5A40] hover:bg-[#E6E2D3]/60 rounded-md transition-colors cursor-pointer flex items-center space-x-1 text-[11px] font-bold"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                            <span>Edit Target</span>
-                          </button>
+                          <span className="text-[10px] text-[#889E81] bg-[#889E81]/10 px-2 py-0.5 rounded-md font-semibold flex items-center space-x-1">
+                            <Database className="w-3 h-3" />
+                            <span>Supabase Linked</span>
+                          </span>
                         </div>
                       )}
                     </div>
@@ -821,7 +894,55 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
       {/* TAB 2: RESIDENT & BED DIRECTORY */}
       {activeTab === 'residents' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          {/* Supabase Realtime Sync Status Banner */}
+          <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-center space-x-3">
+              <div className="w-9 h-9 rounded-xl bg-[#889E81]/15 flex items-center justify-center text-[#889E81] shrink-0">
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h4 className="text-xs font-bold text-[#5A5A40]">Supabase Database Linked</h4>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#889E81]/20 text-[#5A5A40]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#889E81] mr-1.5 animate-pulse"></span>
+                    Live Sync Ready
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#7C7C6D]">
+                  Resident info &amp; bed register details keyed into this Admin Interception station automatically persist to your Supabase PostgreSQL tables.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 shrink-0">
+              <button
+                type="button"
+                id="admin-sync-all-supabase-btn"
+                onClick={handleSyncAllResidents}
+                disabled={isSyncingAllSupabase}
+                className="px-3.5 py-2 bg-white hover:bg-[#F0ECE2] border border-[#E6E2D3] text-[#5A5A40] rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-[#889E81] ${isSyncingAllSupabase ? 'animate-spin' : ''}`} />
+                <span>{isSyncingAllSupabase ? 'Syncing...' : 'Sync All to Supabase'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Sync Toast Feedback */}
+          {syncToast && (
+            <div
+              className={`p-3 rounded-xl border text-xs font-semibold flex items-center space-x-2 ${
+                syncToast.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  : 'bg-amber-50 text-amber-800 border-amber-200'
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{syncToast.message}</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-1">
             <h3 className="text-sm font-serif font-bold text-[#5A5A40]">
               Resident Directory &amp; Bed Allocation ({residents.length} Active Residents)
             </h3>
@@ -886,7 +1007,7 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
                     </button>
                   </div>
 
-                  <div className="text-xs text-[#7C7C6D] space-y-1 pt-2 border-t border-[#E6E2D3]">
+                  <div className="text-xs text-[#7C7C6D] space-y-1.5 pt-2 border-t border-[#E6E2D3]">
                     <p>
                       <span className="text-[#8C8C7E]">Age:</span> {r.age} yrs &bull; Admitted: {r.admissionDate}
                     </p>
@@ -897,8 +1018,22 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
                       <span className="text-[#8C8C7E]">Diet:</span> {r.dietaryRestrictions}
                     </p>
                     <p>
-                      <span className="text-[#8C8C7E]">Family:</span> {r.familyContactName} ({r.familyContactRelation}) - {r.familyContactPhone}
+                      <span className="text-[#8C8C7E]">Family Contact:</span>{' '}
+                      <strong className="text-[#5A5A40]">{r.familyContactName || 'Primary Contact'}</strong>{' '}
+                      {r.familyContactRelation && <span className="text-[#8C8C7E]">({r.familyContactRelation})</span>}
                     </p>
+                    {r.familyContactEmail ? (
+                      <div className="flex items-center space-x-1.5 text-[11px] text-[#5A5A40] bg-[#FAF9F6] p-1.5 rounded-lg border border-[#E6E2D3]">
+                        <Mail className="w-3.5 h-3.5 text-[#889E81] shrink-0" />
+                        <span className="font-medium truncate">{r.familyContactEmail}</span>
+                      </div>
+                    ) : null}
+                    {r.familyContactPhone ? (
+                      <div className="flex items-center space-x-1.5 text-[11px] text-[#7C7C6D]">
+                        <Phone className="w-3 h-3 text-[#8C8C7E] shrink-0" />
+                        <span>{r.familyContactPhone}</span>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -1088,10 +1223,11 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
                     onChange={(e) => setNewBedNumber(e.target.value)}
                     className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl text-[#5A5A40] focus:ring-2 focus:ring-[#889E81]"
                   >
-                    <option value="Bed A">Bed A</option>
-                    <option value="Bed B">Bed B</option>
-                    <option value="Bed C">Bed C</option>
-                    <option value="Single Room">Single Room</option>
+                    {BED_IDENTIFIER_OPTIONS.map((bedOpt) => (
+                      <option key={bedOpt} value={bedOpt}>
+                        {bedOpt}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -1123,11 +1259,11 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#5A5A40] block mb-1">
-                    Primary Family Contact:
+                    Primary Family Contact Name:
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g., Sarah Wong (Daughter)"
+                    placeholder="e.g., Sarah Wong"
                     value={newFamilyName}
                     onChange={(e) => setNewFamilyName(e.target.value)}
                     className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
@@ -1135,13 +1271,40 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
                 </div>
                 <div>
                   <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                    Relationship:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Daughter, Son, Spouse"
+                    value={newFamilyRelation}
+                    onChange={(e) => setNewFamilyRelation(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[#5A5A40] block mb-1">
                     Family Contact Email:
                   </label>
                   <input
                     type="email"
-                    placeholder="sarah.wong@gmail.com"
+                    placeholder="e.g., sarah.wong@gmail.com"
                     value={newFamilyEmail}
                     onChange={(e) => setNewFamilyEmail(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                    Family Phone (Optional):
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="e.g., +1 (555) 234-5678"
+                    value={newFamilyPhone}
+                    onChange={(e) => setNewFamilyPhone(e.target.value)}
                     className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
                   />
                 </div>
@@ -1236,11 +1399,11 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
                     onChange={(e) => setEditBedNumber(e.target.value)}
                     className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
                   >
-                    <option value="Bed A">Bed A (Window)</option>
-                    <option value="Bed B">Bed B (Door)</option>
-                    <option value="Bed C">Bed C</option>
-                    <option value="Bed D">Bed D</option>
-                    <option value="Private Suite">Private Suite</option>
+                    {BED_IDENTIFIER_OPTIONS.map((bedOpt) => (
+                      <option key={bedOpt} value={bedOpt}>
+                        {bedOpt}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -1283,7 +1446,7 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#5A5A40] block mb-1">
-                    Primary Family Contact:
+                    Primary Family Contact Name:
                   </label>
                   <input
                     type="text"
@@ -1294,12 +1457,37 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
                 </div>
                 <div>
                   <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                    Relationship:
+                  </label>
+                  <input
+                    type="text"
+                    value={editFamilyRelation}
+                    onChange={(e) => setEditFamilyRelation(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-[#5A5A40] block mb-1">
                     Family Contact Email:
                   </label>
                   <input
                     type="email"
                     value={editFamilyEmail}
                     onChange={(e) => setEditFamilyEmail(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-[#5A5A40] block mb-1">
+                    Family Phone (Optional):
+                  </label>
+                  <input
+                    type="tel"
+                    value={editFamilyPhone}
+                    onChange={(e) => setEditFamilyPhone(e.target.value)}
                     className="w-full text-xs p-2.5 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-none text-[#4A4A40]"
                   />
                 </div>
