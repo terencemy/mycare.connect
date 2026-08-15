@@ -45,7 +45,13 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
 }) => {
   // Current time & countdown to 7:00 AM
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
-  const [selectedResident, setSelectedResident] = useState<Resident>(residents[0]);
+  const [selectedResident, setSelectedResident] = useState<Resident | null>(residents[0] || null);
+
+  useEffect(() => {
+    if (!selectedResident && residents.length > 0) {
+      setSelectedResident(residents[0]);
+    }
+  }, [residents, selectedResident]);
 
   // Helper: check if resident already completed today
   const getResidentTodayRecord = (resId: string) => {
@@ -429,61 +435,68 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
           <span className="text-[11px] font-bold uppercase tracking-wider text-[#7C7C6D] block mb-2">
             Select Resident Bed for Morning Check:
           </span>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            {residents.map((r) => {
-              const isSelected = selectedResident?.id === r.id;
-              const record = getResidentTodayRecord(r.id);
-              const isDone = !!record;
+          {residents.length === 0 ? (
+            <div className="text-center py-4 px-4 bg-[#FAF9F6] rounded-2xl border border-dashed border-[#E6E2D3]">
+              <p className="text-xs font-semibold text-[#5A5A40]">No resident beds registered yet</p>
+              <p className="text-[11px] text-[#7C7C6D] mt-0.5">Please add a resident in the Admin Dashboard to start the morning vitals protocol.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {residents.map((r) => {
+                const isSelected = selectedResident?.id === r.id;
+                const record = getResidentTodayRecord(r.id);
+                const isDone = !!record;
 
-              return (
-                <button
-                  key={r.id}
-                  id={`select-morning-resident-${r.id}`}
-                  type="button"
-                  onClick={() => handleSelectResident(r)}
-                  className={`p-3 rounded-2xl text-left border transition-all cursor-pointer flex items-center justify-between ${
-                    isSelected
-                      ? 'bg-[#F7F5F0] border-2 border-[#889E81] shadow-xs'
-                      : 'bg-white border-[#E6E2D3] hover:bg-[#FAF9F6]'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2.5 truncate">
-                    <img
-                      src={r.photoUrl}
-                      alt={r.fullName}
-                      className="w-8 h-8 rounded-full object-cover shrink-0 ring-1 ring-[#E6E2D3]"
-                    />
-                    <div className="truncate">
-                      <div className="text-xs font-bold text-[#5A5A40] truncate">
-                        {r.fullName}
-                      </div>
-                      <div className="text-[10px] text-[#7C7C6D]">
-                        Rm {r.roomNumber} &bull; {r.bedNumber}
+                return (
+                  <button
+                    key={r.id}
+                    id={`select-morning-resident-${r.id}`}
+                    type="button"
+                    onClick={() => handleSelectResident(r)}
+                    className={`p-3 rounded-2xl text-left border transition-all cursor-pointer flex items-center justify-between ${
+                      isSelected
+                        ? 'bg-[#F7F5F0] border-2 border-[#889E81] shadow-xs'
+                        : 'bg-white border-[#E6E2D3] hover:bg-[#FAF9F6]'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-2.5 truncate">
+                      <img
+                        src={r.photoUrl}
+                        alt={r.fullName}
+                        className="w-8 h-8 rounded-full object-cover shrink-0 ring-1 ring-[#E6E2D3]"
+                      />
+                      <div className="truncate">
+                        <div className="text-xs font-bold text-[#5A5A40] truncate">
+                          {r.fullName}
+                        </div>
+                        <div className="text-[10px] text-[#7C7C6D]">
+                          Rm {r.roomNumber} &bull; {r.bedNumber}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div>
-                    {isDone ? (
-                      <span
-                        title={`Verified at ${record.formattedTime}`}
-                        className="w-6 h-6 rounded-full bg-[#EBF1EA] text-[#889E81] flex items-center justify-center text-xs font-bold border border-[#889E81]/30 shrink-0"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                      </span>
-                    ) : (
-                      <span
-                        title="Pending Pre-7AM Photo"
-                        className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]"
-                      >
-                        Pending upload
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                    <div>
+                      {isDone ? (
+                        <span
+                          title={`Verified at ${record.formattedTime}`}
+                          className="w-6 h-6 rounded-full bg-[#EBF1EA] text-[#889E81] flex items-center justify-center text-xs font-bold border border-[#889E81]/30 shrink-0"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </span>
+                      ) : (
+                        <span
+                          title="Pending Pre-7AM Photo"
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]"
+                        >
+                          Pending upload
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 

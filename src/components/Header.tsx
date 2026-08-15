@@ -1,18 +1,34 @@
 import React from 'react';
 import { UserRole, UserProfile } from '../types';
-import { ShieldCheck, HeartHandshake, Users, Sparkles, Building2, Bell } from 'lucide-react';
+import { ShieldCheck, HeartHandshake, Users, Sparkles, Building2, Bell, Edit2, Check, X } from 'lucide-react';
 
 interface HeaderProps {
   currentUser: UserProfile;
   onSelectRole: (role: UserRole) => void;
   pendingInquiriesCount: number;
+  onUpdateUserName?: (newName: string) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentUser,
   onSelectRole,
   pendingInquiriesCount,
+  onUpdateUserName,
 }) => {
+  const [isEditingName, setIsEditingName] = React.useState(false);
+  const [editedName, setEditedName] = React.useState(currentUser.name);
+
+  React.useEffect(() => {
+    setEditedName(currentUser.name);
+  }, [currentUser.name]);
+
+  const handleSaveName = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (editedName.trim() && onUpdateUserName) {
+      onUpdateUserName(editedName.trim());
+    }
+    setIsEditingName(false);
+  };
   return (
     <header className="bg-white/80 backdrop-blur-md border-b border-[#E6E2D3] sticky top-0 z-50 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -85,17 +101,74 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* User Profile Badge */}
           <div className="flex items-center space-x-3">
-            <div className="text-right hidden md:block">
-              <div className="text-xs font-semibold text-[#5A5A40]">{currentUser.name}</div>
-              <div className="text-[11px] text-[#7C7C6D] flex items-center justify-end space-x-1">
-                <span>{currentUser.title || currentUser.role}</span>
+            {isEditingName ? (
+              <form onSubmit={handleSaveName} className="flex items-center space-x-1.5 bg-white p-1 rounded-xl border border-[#889E81] shadow-xs">
+                <input
+                  type="text"
+                  value={editedName}
+                  onChange={(e) => setEditedName(e.target.value)}
+                  placeholder="Enter name..."
+                  autoFocus
+                  className="px-2 py-1 text-xs text-[#5A5A40] font-medium outline-none rounded-lg w-36 bg-[#FAF9F6] border border-[#E6E2D3]"
+                />
+                <button
+                  type="submit"
+                  title="Save Name"
+                  className="p-1 rounded-md bg-[#889E81] text-white hover:bg-[#778E70] transition-colors"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditedName(currentUser.name);
+                    setIsEditingName(false);
+                  }}
+                  title="Cancel"
+                  className="p-1 rounded-md bg-[#F0ECE2] text-[#7C7C6D] hover:bg-[#E6E2D3] transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </form>
+            ) : (
+              <div className="text-right hidden sm:block group relative">
+                <div className="flex items-center justify-end space-x-1">
+                  <div className="text-xs font-semibold text-[#5A5A40]">{currentUser.name}</div>
+                  {onUpdateUserName && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingName(true)}
+                      title="Edit Name"
+                      className="p-0.5 rounded text-[#7C7C6D] hover:text-[#5A5A40] hover:bg-[#F0ECE2] transition-colors opacity-70 group-hover:opacity-100 cursor-pointer"
+                    >
+                      <Edit2 className="w-3 h-3 text-[#889E81]" />
+                    </button>
+                  )}
+                </div>
+                <div className="text-[11px] text-[#7C7C6D] flex items-center justify-end space-x-1">
+                  <span>{currentUser.title || currentUser.role}</span>
+                </div>
               </div>
+            )}
+            <div className="relative">
+              <img
+                src={currentUser.avatarUrl}
+                alt={currentUser.name}
+                className="w-10 h-10 rounded-full object-cover ring-2 ring-[#889E81]/30 border border-white cursor-pointer"
+                onClick={() => onUpdateUserName && setIsEditingName(!isEditingName)}
+                title="Click to edit name"
+              />
+              {onUpdateUserName && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingName(!isEditingName)}
+                  title="Edit Caregiver Name"
+                  className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#889E81] text-white rounded-full flex items-center justify-center shadow-xs border border-white cursor-pointer sm:hidden"
+                >
+                  <Edit2 className="w-2.5 h-2.5" />
+                </button>
+              )}
             </div>
-            <img
-              src={currentUser.avatarUrl}
-              alt={currentUser.name}
-              className="w-10 h-10 rounded-full object-cover ring-2 ring-[#889E81]/30 border border-white"
-            />
           </div>
         </div>
       </div>

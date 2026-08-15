@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Resident,
   CareLog,
@@ -30,6 +30,7 @@ import {
   RefreshCw,
   Sparkle,
   Calendar,
+  Users,
 } from 'lucide-react';
 
 interface CaregiverViewProps {
@@ -105,6 +106,12 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
   // 1. Mandatory Resident Tagging State
   const [selectedResident, setSelectedResident] = useState<Resident | null>(residents[0] || null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (!selectedResident && residents.length > 0) {
+      setSelectedResident(residents[0]);
+    }
+  }, [residents, selectedResident]);
 
   // 2. Media Upload State
   const [mediaUrl, setMediaUrl] = useState<string>(SAMPLE_MEDIA_OPTIONS[0].url);
@@ -364,44 +371,52 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
 
               {/* Fast Touch-Friendly Resident Cards Grid */}
               <div className="grid grid-cols-1 gap-2 max-h-56 overflow-y-auto pr-1">
-                {filteredResidents.map((res) => {
-                  const isSelected = selectedResident?.id === res.id;
-                  return (
-                    <button
-                      key={res.id}
-                      id={`tag-resident-${res.id}`}
-                      type="button"
-                      onClick={() => setSelectedResident(res)}
-                      className={`text-left p-3 rounded-[20px] border transition-all flex items-center space-x-3 cursor-pointer ${
-                        isSelected
-                          ? 'border-2 border-[#889E81] bg-[#F7F5F0] shadow-xs'
-                          : 'border-[#E6E2D3] bg-white hover:bg-[#FAF9F6]'
-                      }`}
-                    >
-                      <img
-                        src={res.photoUrl}
-                        alt={res.fullName}
-                        className="w-10 h-10 rounded-full object-cover shrink-0 ring-2 ring-[#E6E2D3]"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-[#5A5A40] truncate">
-                            {res.fullName}
-                          </span>
-                          <span className="text-[10px] font-bold text-[#5A5A40] bg-[#F0ECE2] px-2 py-0.5 rounded-full border border-[#E6E2D3]">
-                            Rm {res.roomNumber} &bull; {res.bedNumber}
-                          </span>
+                {filteredResidents.length === 0 ? (
+                  <div className="text-center py-6 px-4 bg-[#FAF9F6] rounded-2xl border border-dashed border-[#E6E2D3]">
+                    <Users className="w-8 h-8 text-[#8C8C7E] mx-auto mb-2 opacity-60" />
+                    <p className="text-xs font-semibold text-[#5A5A40]">No residents registered</p>
+                    <p className="text-[11px] text-[#7C7C6D] mt-0.5">Add residents in the Admin tab or sync from Supabase.</p>
+                  </div>
+                ) : (
+                  filteredResidents.map((res) => {
+                    const isSelected = selectedResident?.id === res.id;
+                    return (
+                      <button
+                        key={res.id}
+                        id={`tag-resident-${res.id}`}
+                        type="button"
+                        onClick={() => setSelectedResident(res)}
+                        className={`text-left p-3 rounded-[20px] border transition-all flex items-center space-x-3 cursor-pointer ${
+                          isSelected
+                            ? 'border-2 border-[#889E81] bg-[#F7F5F0] shadow-xs'
+                            : 'border-[#E6E2D3] bg-white hover:bg-[#FAF9F6]'
+                        }`}
+                      >
+                        <img
+                          src={res.photoUrl}
+                          alt={res.fullName}
+                          className="w-10 h-10 rounded-full object-cover shrink-0 ring-2 ring-[#E6E2D3]"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-[#5A5A40] truncate">
+                              {res.fullName}
+                            </span>
+                            <span className="text-[10px] font-bold text-[#5A5A40] bg-[#F0ECE2] px-2 py-0.5 rounded-full border border-[#E6E2D3]">
+                              Rm {res.roomNumber} &bull; {res.bedNumber}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#7C7C6D] truncate">
+                            Known as: &ldquo;{res.preferredName}&rdquo; &bull; {res.dietaryRestrictions}
+                          </p>
                         </div>
-                        <p className="text-[11px] text-[#7C7C6D] truncate">
-                          Known as: &ldquo;{res.preferredName}&rdquo; &bull; {res.dietaryRestrictions}
-                        </p>
-                      </div>
-                      {isSelected && (
-                        <CheckCircle2 className="w-5 h-5 text-[#889E81] shrink-0" />
-                      )}
-                    </button>
-                  );
-                })}
+                        {isSelected && (
+                          <CheckCircle2 className="w-5 h-5 text-[#889E81] shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })
+                )}
               </div>
 
               {/* Tagging Confirmation Banner */}

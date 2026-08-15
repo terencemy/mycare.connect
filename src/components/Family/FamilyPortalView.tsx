@@ -48,9 +48,16 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
 }) => {
   // Find linked resident or default to first
   const defaultResident =
-    residents.find((r) => r.id === currentFamilyUser.residentId) || residents[0];
+    residents.find((r) => r.id === currentFamilyUser.residentId) || residents[0] || null;
   const [selectedResidentId, setSelectedResidentId] = useState<string>(defaultResident?.id || '');
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!selectedResidentId && residents.length > 0) {
+      const def = residents.find((r) => r.id === currentFamilyUser.residentId) || residents[0];
+      if (def) setSelectedResidentId(def.id);
+    }
+  }, [residents, selectedResidentId, currentFamilyUser.residentId]);
 
   const activeResident =
     residents.find((r) => r.id === selectedResidentId) || defaultResident;
@@ -97,6 +104,22 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
       setMessageText('');
     }, 2000);
   };
+
+  if (residents.length === 0 || !activeResident) {
+    return (
+      <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-12 text-center shadow-xs space-y-4 max-w-xl mx-auto my-8">
+        <div className="w-14 h-14 rounded-full bg-[#F0ECE2] text-[#889E81] flex items-center justify-center mx-auto border border-[#E6E2D3]">
+          <Heart className="w-7 h-7" />
+        </div>
+        <div>
+          <h2 className="text-base font-serif font-bold text-[#5A5A40]">Welcome to Family Portal</h2>
+          <p className="text-xs text-[#7C7C6D] mt-1.5 leading-relaxed">
+            No resident records are registered in the facility yet. As soon as a resident profile is created or synced from Supabase, their daily moments, care updates, and verified vitals will appear here in real time.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

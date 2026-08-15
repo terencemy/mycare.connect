@@ -130,7 +130,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       medicalNotes: newMedicalNotes || 'Assisted living general care plan.',
       carePlan: ['Routine vitals check', 'Nutritional monitoring', 'Hydration schedule'],
       assignedCaregiverId: 'user_care_1',
-      assignedCaregiverName: 'Nurse Sarah Jenkins',
+      assignedCaregiverName: 'Caregiver Staff',
       familyContactName: newFamilyName || 'Next of Kin',
       familyContactRelation: 'Family Member',
       familyContactEmail: newFamilyEmail || 'family@example.com',
@@ -620,7 +620,7 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
                   <div className="p-3.5 bg-[#EBF1EA] rounded-2xl border border-[#889E81]/30 text-xs text-[#5A5A40] font-semibold flex items-center space-x-2">
                     <CheckCircle2 className="w-4 h-4 text-[#889E81]" />
                     <span>
-                      Responded by {selectedMessage.respondedByAdminName || 'Eleanor Vance, RN'} on{' '}
+                      Responded by {selectedMessage.respondedByAdminName || adminUser.name || 'Facility Administrator'} on{' '}
                       {selectedMessage.respondedAt &&
                         new Date(selectedMessage.respondedAt).toLocaleDateString()}
                     </span>
@@ -654,45 +654,63 @@ USING (auth.uid() IN (SELECT user_id FROM public.family_residents WHERE resident
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {residents.map((r) => (
-              <div
-                key={r.id}
-                className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-3"
+          {residents.length === 0 ? (
+            <div className="bg-white rounded-[24px] border border-dashed border-[#E6E2D3] p-12 text-center space-y-3">
+              <Users className="w-10 h-10 text-[#8C8C7E] mx-auto opacity-50" />
+              <h4 className="text-sm font-bold text-[#5A5A40]">No Residents Admitted Yet</h4>
+              <p className="text-xs text-[#7C7C6D] max-w-md mx-auto">
+                Admit a resident using the button above or connect your Supabase database to synchronize live resident profiles.
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsAddResidentModalOpen(true)}
+                className="mt-2 px-4 py-2 bg-[#889E81] hover:bg-[#788E71] text-white rounded-full text-xs font-bold inline-flex items-center space-x-1.5 shadow-xs cursor-pointer"
               >
-                <div className="flex items-center space-x-3">
-                  <img
-                    src={r.photoUrl}
-                    alt={r.fullName}
-                    className="w-12 h-12 rounded-full object-cover ring-2 ring-[#E6E2D3]"
-                  />
-                  <div>
-                    <h4 className="text-xs font-bold text-[#5A5A40]">
-                      {r.fullName}
-                    </h4>
-                    <span className="text-[10px] font-bold text-[#5A5A40] bg-[#F0ECE2] border border-[#E6E2D3] px-2.5 py-0.5 rounded-full">
-                      Room {r.roomNumber} &bull; {r.bedNumber}
-                    </span>
+                <Plus className="w-4 h-4" />
+                <span>Admit First Resident</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {residents.map((r) => (
+                <div
+                  key={r.id}
+                  className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-3"
+                >
+                  <div className="flex items-center space-x-3">
+                    <img
+                      src={r.photoUrl}
+                      alt={r.fullName}
+                      className="w-12 h-12 rounded-full object-cover ring-2 ring-[#E6E2D3]"
+                    />
+                    <div>
+                      <h4 className="text-xs font-bold text-[#5A5A40]">
+                        {r.fullName}
+                      </h4>
+                      <span className="text-[10px] font-bold text-[#5A5A40] bg-[#F0ECE2] border border-[#E6E2D3] px-2.5 py-0.5 rounded-full">
+                        Room {r.roomNumber} &bull; {r.bedNumber}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-[#7C7C6D] space-y-1 pt-2 border-t border-[#E6E2D3]">
+                    <p>
+                      <span className="text-[#8C8C7E]">Age:</span> {r.age} yrs &bull; Admitted: {r.admissionDate}
+                    </p>
+                    <p>
+                      <span className="text-[#8C8C7E]">Caregiver:</span> <strong className="text-[#5A5A40]">{r.assignedCaregiverName}</strong>
+                    </p>
+                    <p>
+                      <span className="text-[#8C8C7E]">Diet:</span> {r.dietaryRestrictions}
+                    </p>
+                    <p>
+                      <span className="text-[#8C8C7E]">Family:</span> {r.familyContactName} ({r.familyContactRelation}) - {r.familyContactPhone}
+                    </p>
                   </div>
                 </div>
-
-                <div className="text-xs text-[#7C7C6D] space-y-1 pt-2 border-t border-[#E6E2D3]">
-                  <p>
-                    <span className="text-[#8C8C7E]">Age:</span> {r.age} yrs &bull; Admitted: {r.admissionDate}
-                  </p>
-                  <p>
-                    <span className="text-[#8C8C7E]">Caregiver:</span> <strong className="text-[#5A5A40]">{r.assignedCaregiverName}</strong>
-                  </p>
-                  <p>
-                    <span className="text-[#8C8C7E]">Diet:</span> {r.dietaryRestrictions}
-                  </p>
-                  <p>
-                    <span className="text-[#8C8C7E]">Family:</span> {r.familyContactName} ({r.familyContactRelation}) - {r.familyContactPhone}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

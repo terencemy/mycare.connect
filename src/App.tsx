@@ -14,13 +14,41 @@ import {
 import { INITIAL_USERS, INITIAL_RESIDENTS, INITIAL_CARE_LOGS, INITIAL_FAMILY_MESSAGES, INITIAL_MORNING_VITALS } from './data/mockData';
 
 export default function App() {
-  const [users] = useState<UserProfile[]>(INITIAL_USERS);
+  const [users, setUsers] = useState<UserProfile[]>(() => {
+    try {
+      const saved = localStorage.getItem('careconnect_users');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // If parsed contains legacy hardcoded names, reset to INITIAL_USERS
+        const hasLegacyNames = parsed.some((u: UserProfile) => 
+          u.name.includes('Sarah Jenkins') || u.name.includes('Eleanor Vance') || u.name.includes('Jonathan Tan')
+        );
+        if (!hasLegacyNames) return parsed;
+      }
+    } catch (e) {
+      console.warn('LocalStorage error:', e);
+    }
+    return INITIAL_USERS;
+  });
   const [currentRole, setCurrentRole] = useState<UserRole>('caregiver');
   const [residents, setResidents] = useState<Resident[]>(INITIAL_RESIDENTS);
   const [careLogs, setCareLogs] = useState<CareLog[]>(INITIAL_CARE_LOGS);
   const [familyMessages, setFamilyMessages] = useState<FamilyMessage[]>(INITIAL_FAMILY_MESSAGES);
   const [morningVitals, setMorningVitals] = useState<MorningVitalsRecord[]>(INITIAL_MORNING_VITALS);
   const [loading, setLoading] = useState(true);
+
+  // Update User Profile / Caregiver Name handler
+  const handleUpdateUserName = (newName: string) => {
+    setUsers((prev) => {
+      const updated = prev.map((u) => (u.role === currentRole ? { ...u, name: newName } : u));
+      try {
+        localStorage.setItem('careconnect_users', JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Failed to persist user name:', e);
+      }
+      return updated;
+    });
+  };
 
   // Sync initial data from backend API
   useEffect(() => {
@@ -249,6 +277,7 @@ export default function App() {
         currentUser={currentUser}
         onSelectRole={setCurrentRole}
         pendingInquiriesCount={pendingInquiriesCount}
+        onUpdateUserName={handleUpdateUserName}
       />
 
       {/* Main Container */}
