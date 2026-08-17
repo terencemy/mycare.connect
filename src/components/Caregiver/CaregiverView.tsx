@@ -183,7 +183,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
     }
   };
 
-  // Publish Log to Family Timeline
+  // Publish Log to Family Timeline (Requires Admin Approval)
   const handlePublish = async () => {
     if (!selectedResident || !aiResult) return;
 
@@ -204,6 +204,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
       vitals,
       activities: selectedActivities,
       caregiverRawNotes: quickNote,
+      approvalStatus: 'pending_approval',
     });
 
     setPublishSuccess(true);
@@ -737,7 +738,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                       type="button"
                       onClick={handlePublish}
                       disabled={publishSuccess}
-                      className={`w-full py-3 px-4 rounded-2xl text-xs font-bold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+                      className={`w-full py-3.5 px-4 rounded-2xl text-xs font-bold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
                         publishSuccess
                           ? 'bg-[#889E81] text-white'
                           : 'bg-[#5A5A40] hover:bg-[#4A4A30] text-white shadow-xs'
@@ -746,15 +747,18 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                       {publishSuccess ? (
                         <>
                           <Check className="w-4 h-4" />
-                          <span>Published to Family Feed Successfully!</span>
+                          <span>Submitted for Admin Review &amp; Approval!</span>
                         </>
                       ) : (
                         <>
                           <Send className="w-4 h-4" />
-                          <span>Confirm &amp; Publish Care Update</span>
+                          <span>Submit Update for Admin Approval</span>
                         </>
                       )}
                     </button>
+                    <p className="text-[10px] text-center text-[#7C7C6D] mt-2">
+                      Updates are reviewed by the Operations Admin before publishing to the Family Portal.
+                    </p>
                   </div>
                 </div>
               )}
@@ -784,8 +788,8 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                   alt={log.residentFullName}
                   className="w-full md:w-36 h-28 object-cover rounded-2xl shrink-0"
                 />
-                <div className="flex-1 space-y-1.5">
-                  <div className="flex items-center justify-between">
+                <div className="flex-1 space-y-1.5 w-full">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center space-x-2">
                       <span className="font-bold text-xs text-[#5A5A40]">
                         {log.residentFullName}
@@ -794,9 +798,30 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                         R {log.roomNumber} &bull; {log.bedNumber}
                       </span>
                     </div>
-                    <span className="text-[11px] text-[#8C8C7E]">
-                      {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
+
+                    <div className="flex items-center space-x-2">
+                      {/* Approval Status Badge */}
+                      {log.approvalStatus === 'approved' ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center space-x-1">
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          <span>Approved &amp; Live for Family</span>
+                        </span>
+                      ) : log.approvalStatus === 'rejected' ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 flex items-center space-x-1">
+                          <AlertCircle className="w-3 h-3 text-rose-600" />
+                          <span>Revision Requested</span>
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 flex items-center space-x-1">
+                          <Clock className="w-3 h-3 text-amber-600 animate-pulse" />
+                          <span>Pending Admin Approval</span>
+                        </span>
+                      )}
+
+                      <span className="text-[11px] text-[#8C8C7E]">
+                        {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
                   </div>
 
                   <p className="text-xs text-[#4A4A40] line-clamp-2">
@@ -812,6 +837,12 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                     <span>&bull;</span>
                     <span className="text-[#889E81] font-semibold">By: {log.caregiverName}</span>
                   </div>
+
+                  {log.adminReviewNotes && (
+                    <div className="mt-2 p-2 bg-[#F0ECE2] rounded-xl text-[11px] text-[#5A5A40] border border-[#E6E2D3]">
+                      <strong>Admin Note:</strong> {log.adminReviewNotes}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

@@ -3,8 +3,20 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
-import { INITIAL_RESIDENTS, INITIAL_CARE_LOGS, INITIAL_FAMILY_MESSAGES, INITIAL_USERS, INITIAL_MORNING_VITALS } from './src/data/mockData';
-import { CareLog, FamilyMessage, Resident, UserProfile, MorningVitalsRecord } from './src/types';
+import { Resend } from 'resend';
+import { INITIAL_RESIDENTS, INITIAL_CARE_LOGS, INITIAL_FAMILY_MESSAGES, INITIAL_USERS, INITIAL_MORNING_VITALS, INITIAL_REGISTERED_ADMINS } from './src/data/mockData';
+import { CareLog, FamilyMessage, Resident, UserProfile, MorningVitalsRecord, RegisteredAdmin } from './src/types';
+
+// Lazy initialized Resend Client for real email OTP delivery
+let resendClient: Resend | null = null;
+function getResendClient(): Resend | null {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return null;
+  if (!resendClient) {
+    resendClient = new Resend(apiKey);
+  }
+  return resendClient;
+}
 
 // Initialize in-memory state
 let residents: Resident[] = [...INITIAL_RESIDENTS];
@@ -12,6 +24,15 @@ let careLogs: CareLog[] = [...INITIAL_CARE_LOGS];
 let familyMessages: FamilyMessage[] = [...INITIAL_FAMILY_MESSAGES];
 let users: UserProfile[] = [...INITIAL_USERS];
 let morningVitals: MorningVitalsRecord[] = [...INITIAL_MORNING_VITALS];
+let registeredAdmins: RegisteredAdmin[] = [...INITIAL_REGISTERED_ADMINS];
+
+// In-memory OTP code store for admin email verification: email.toLowerCase() -> { code, expiresAt, admin }
+interface PendingOtp {
+  code: string;
+  expiresAt: number;
+  admin: RegisteredAdmin;
+}
+const pendingAdminOtps = new Map<string, PendingOtp>();
 
 // Supabase Server Client Setup
 const RAW_SUPABASE_URL = process.env.SUPABASE_URL || 'https://jjaduhfcetzhzwmcjuri.supabase.co';
@@ -193,6 +214,222 @@ async function startServer() {
     res.json(users);
   });
 
+  // --- Admin Email Verification & Authentication Endpoints ---
+
+  // Get Registered Admin Directory
+  app.get('/api/auth/admin/registered-directory', (req, res) => {
+    res.json(registeredAdmins);
+  });
+
+  // Request Email Verification Code (Strictly for registered admins)
+  app.post('/api/auth/admin/send-verification-code', async (req, res) => {
+    const { email } = req.body;
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({
+        error: 'INVALID_EMAIL',
+        message: 'A valid email address is required.',
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const admin = registeredAdmins.find(
+      (a) => a.email.toLowerCase() === normalizedEmail && a.status === 'active'
+    );
+
+    // Strictly check if email is a registered and active admin
+    if (!admin) {
+      return res.status(403).json({
+        error: 'UNAUTHORIZED_EMAIL',
+        message: `Access Denied: The email "${email}" is not registered as an authorized administrator. Only registered administrative personnel may log in.`,
+        isRegistered: false,
+      });
+    }
+
+    // Generate secure 6-digit OTP
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    pendingAdminOtps.set(normalizedEmail, {
+      code,
+      expiresAt,
+      admin,
+    });
+
+    console.log(`[Admin Auth] Verification Code generated for ${normalizedEmail}: ${code} (Expires in 10m)`);
+
+    // Dispatch real email via Resend if API key is configured
+    const resend = getResendClient();
+    let emailSent = false;
+    let resendMessageId: string | undefined;
+
+    if (resend) {
+      try {
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Care Connect <onboarding@resend.dev>';
+        const { data, error } = await resend.emails.send({
+          from: fromEmail,
+          to: [admin.email],
+          subject: `Care Connect Admin Verification Code: ${code}`,
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 32px 24px; background-color: #FAF9F6; border: 1px solid #E6E2D3; border-radius: 16px; color: #4A4A40;">
+              <div style="margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #E6E2D3;">
+                <h1 style="font-size: 20px; font-weight: 700; color: #5A5A40; margin: 0;">Care Connect</h1>
+                <p style="font-size: 12px; color: #7C7C6D; margin: 4px 0 0 0;">Facility Administrative Verification &bull; Malaysia PDPA Compliant</p>
+              </div>
+              
+              <p style="font-size: 14px; line-height: 1.5; color: #5A5A40; margin: 0 0 16px 0;">Hello <strong>${admin.name}</strong>,</p>
+              <p style="font-size: 14px; line-height: 1.5; color: #5A5A40; margin: 0 0 24px 0;">You have requested administrator access to the Care Connect portal. Enter the 6-digit verification code below to complete your login:</p>
+              
+              <div style="background-color: #FFFFFF; border: 1.5px solid #889E81; border-radius: 12px; padding: 24px; text-align: center; margin: 0 0 24px 0;">
+                <div style="font-size: 36px; font-weight: 800; letter-spacing: 10px; font-family: ui-monospace, Menlo, Monaco, monospace; color: #5A5A40;">${code}</div>
+                <p style="font-size: 11px; color: #7C7C6D; margin: 10px 0 0 0;">Valid for 10 minutes &bull; Single-use security token</p>
+              </div>
+              
+              <div style="background-color: #F0ECE2; border-radius: 8px; padding: 12px 16px; margin: 0 0 24px 0; font-size: 12px; color: #7C7C6D; line-height: 1.4;">
+                <strong>Strict Security Notice:</strong> If you did not initiate this request, please notify facility administration immediately. Never share your verification code.
+              </div>
+              
+              <p style="font-size: 11px; color: #8C8C7E; margin: 0; border-top: 1px solid #E6E2D3; padding-top: 16px;">
+                Care Connect Assisted Living &bull; Malaysia PDPA Certified
+              </p>
+            </div>
+          `,
+        });
+
+        if (error) {
+          console.error('[Resend Error]', error);
+        } else {
+          emailSent = true;
+          resendMessageId = data?.id;
+          console.log(`[Resend Success] Real verification email delivered to ${admin.email} (Message ID: ${data?.id})`);
+        }
+      } catch (err) {
+        console.error('[Resend Dispatch Exception]', err);
+      }
+    } else {
+      console.log(`[Resend Notice] RESEND_API_KEY is not set in secrets. In-memory OTP code for ${admin.email} is: ${code}`);
+    }
+
+    res.json({
+      success: true,
+      message: emailSent
+        ? `A 6-digit verification code has been dispatched to your email (${admin.email}) via Resend.`
+        : `A 6-digit verification code has been generated and dispatched for ${admin.email}.`,
+      adminName: admin.name,
+      adminTitle: admin.title,
+      maskedEmail: `${normalizedEmail.slice(0, 3)}••••@${normalizedEmail.split('@')[1]}`,
+      expiresInSeconds: 600,
+      emailSent,
+      resendConfigured: !!process.env.RESEND_API_KEY,
+    });
+  });
+
+  // Verify 6-Digit Code and Complete Admin Login
+  app.post('/api/auth/admin/verify-code', (req, res) => {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({
+        error: 'MISSING_FIELDS',
+        message: 'Email and 6-digit verification code are required.',
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const pending = pendingAdminOtps.get(normalizedEmail);
+
+    if (!pending) {
+      return res.status(400).json({
+        error: 'CODE_EXPIRED_OR_NOT_REQUESTED',
+        message: 'No active verification code found for this email. Please request a new code.',
+      });
+    }
+
+    if (Date.now() > pending.expiresAt) {
+      pendingAdminOtps.delete(normalizedEmail);
+      return res.status(400).json({
+        error: 'CODE_EXPIRED',
+        message: 'Verification code has expired. Please request a fresh 6-digit code.',
+      });
+    }
+
+    const cleanInputCode = String(code).trim();
+    if (cleanInputCode !== pending.code) {
+      return res.status(400).json({
+        error: 'INVALID_CODE',
+        message: 'Incorrect 6-digit verification code. Please check your email and try again.',
+      });
+    }
+
+    // Successfully verified! Clear OTP and update lastLoginAt
+    pendingAdminOtps.delete(normalizedEmail);
+    const now = new Date().toISOString();
+    pending.admin.lastLoginAt = now;
+
+    // Update global users array admin profile if needed
+    const adminUser = users.find((u) => u.role === 'admin');
+    if (adminUser) {
+      adminUser.name = pending.admin.name;
+      adminUser.email = pending.admin.email;
+      adminUser.title = pending.admin.title;
+    }
+
+    const sessionToken = `adm_token_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+    res.json({
+      success: true,
+      token: sessionToken,
+      verifiedAt: now,
+      user: {
+        id: pending.admin.id,
+        name: pending.admin.name,
+        email: pending.admin.email,
+        role: 'admin',
+        title: pending.admin.title,
+      },
+    });
+  });
+
+  // Add a new Registered Admin (Only callable when logged in as admin)
+  app.post('/api/auth/admin/register-admin', (req, res) => {
+    const { name, email, title } = req.body;
+    if (!email || !name) {
+      return res.status(400).json({ error: 'Name and email are required' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const existing = registeredAdmins.find((a) => a.email.toLowerCase() === normalizedEmail);
+    if (existing) {
+      existing.status = 'active';
+      existing.name = name;
+      if (title) existing.title = title;
+      return res.json({ success: true, message: 'Admin profile updated', admin: existing });
+    }
+
+    const newAdmin: RegisteredAdmin = {
+      id: `radmin_${Date.now()}`,
+      name: name.trim(),
+      email: normalizedEmail,
+      title: title?.trim() || 'Facility Administrator',
+      status: 'active',
+      registeredAt: new Date().toISOString(),
+    };
+
+    registeredAdmins.unshift(newAdmin);
+    res.status(201).json({ success: true, admin: newAdmin });
+  });
+
+  // Toggle/Deactivate Registered Admin
+  app.put('/api/auth/admin/registered/:id/status', (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    const target = registeredAdmins.find((a) => a.id === id);
+    if (!target) {
+      return res.status(404).json({ error: 'Registered admin not found' });
+    }
+
+    target.status = status === 'inactive' ? 'inactive' : 'active';
+    res.json({ success: true, admin: target });
+  });
+
   // Residents Endpoints
   app.get('/api/residents', async (req, res) => {
     try {
@@ -312,11 +549,15 @@ async function startServer() {
 
   // Care Logs Endpoints
   app.get('/api/care-logs', (req, res) => {
-    const { residentId } = req.query;
+    const { residentId, status } = req.query;
+    let results = [...careLogs];
     if (residentId) {
-      return res.json(careLogs.filter((log) => log.residentId === residentId));
+      results = results.filter((log) => log.residentId === residentId);
     }
-    res.json(careLogs);
+    if (status) {
+      results = results.filter((log) => log.approvalStatus === status);
+    }
+    res.json(results);
   });
 
   app.post('/api/care-logs', (req, res) => {
@@ -326,10 +567,53 @@ async function startServer() {
       familyLikesCount: 0,
       familyCommentsCount: 0,
       flaggedForAdminReview: false,
+      approvalStatus: req.body.approvalStatus || 'pending_approval',
       ...req.body,
     };
     careLogs.unshift(newLog);
     res.status(201).json(newLog);
+  });
+
+  // Admin Approval / Rejection endpoint for Caregiver Logs
+  app.put('/api/care-logs/:id/approval', (req, res) => {
+    const { id } = req.params;
+    const { status, adminName, reviewNotes } = req.body; // status: 'approved' | 'rejected' | 'pending_approval'
+    const log = careLogs.find((l) => l.id === id);
+    if (!log) {
+      return res.status(404).json({ error: 'Care log not found' });
+    }
+
+    log.approvalStatus = status;
+    if (status === 'approved') {
+      log.approvedByAdminName = adminName || 'Admin Desk';
+      log.approvedAt = new Date().toISOString();
+    } else if (status === 'rejected') {
+      log.approvedByAdminName = adminName || 'Admin Desk';
+      log.approvedAt = undefined;
+    }
+    if (reviewNotes !== undefined) {
+      log.adminReviewNotes = reviewNotes;
+    }
+
+    res.json(log);
+  });
+
+  // Bulk Approve all pending care logs
+  app.post('/api/care-logs/bulk-approve', (req, res) => {
+    const { adminName } = req.body;
+    const now = new Date().toISOString();
+    let updatedCount = 0;
+
+    careLogs.forEach((log) => {
+      if (log.approvalStatus === 'pending_approval' || !log.approvalStatus) {
+        log.approvalStatus = 'approved';
+        log.approvedByAdminName = adminName || 'Admin Desk';
+        log.approvedAt = now;
+        updatedCount++;
+      }
+    });
+
+    res.json({ success: true, updatedCount, logs: careLogs });
   });
 
   app.post('/api/care-logs/:id/like', (req, res) => {

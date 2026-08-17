@@ -1,12 +1,14 @@
 import React from 'react';
-import { UserRole, UserProfile } from '../types';
-import { ShieldCheck, HeartHandshake, Users, Sparkles, Building2, Bell, Edit2, Check, X } from 'lucide-react';
+import { UserRole, UserProfile, AdminAuthSession } from '../types';
+import { ShieldCheck, HeartHandshake, Users, Sparkles, Building2, Bell, Edit2, Check, X, Lock, LogOut } from 'lucide-react';
 
 interface HeaderProps {
   currentUser: UserProfile;
   onSelectRole: (role: UserRole) => void;
   pendingInquiriesCount: number;
   onUpdateUserName?: (newName: string) => void;
+  adminAuthSession?: AdminAuthSession;
+  onLockAdminSession?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -14,6 +16,8 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectRole,
   pendingInquiriesCount,
   onUpdateUserName,
+  adminAuthSession,
+  onLockAdminSession,
 }) => {
   const [isEditingName, setIsEditingName] = React.useState(false);
   const [editedName, setEditedName] = React.useState(currentUser.name);
@@ -91,6 +95,9 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <ShieldCheck className="w-3.5 h-3.5 text-[#889E81]" />
               <span>Admin</span>
+              {adminAuthSession?.isAuthenticated && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Verified Admin Session" />
+              )}
               {pendingInquiriesCount > 0 && (
                 <span className="w-4 h-4 rounded-full bg-[#C27D60] text-white text-[10px] flex items-center justify-center font-bold">
                   {pendingInquiriesCount}
@@ -99,8 +106,21 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          {/* User Profile Badge */}
+          {/* User Profile Badge & Admin Session Status */}
           <div className="flex items-center space-x-3">
+            {currentUser.role === 'admin' && adminAuthSession?.isAuthenticated && onLockAdminSession && (
+              <button
+                type="button"
+                id="header-lock-admin-btn"
+                onClick={onLockAdminSession}
+                title="Lock Admin Portal & Sign Out"
+                className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 bg-[#FAF9F6] hover:bg-rose-50 border border-[#E6E2D3] hover:border-rose-300 text-[#7C7C6D] hover:text-rose-700 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Lock Portal</span>
+              </button>
+            )}
+
             {isEditingName ? (
               <form onSubmit={handleSaveName} className="flex items-center space-x-1.5 bg-white p-1 rounded-xl border border-[#889E81] shadow-xs">
                 <input
@@ -133,7 +153,14 @@ export const Header: React.FC<HeaderProps> = ({
             ) : (
               <div className="text-right hidden sm:block group relative">
                 <div className="flex items-center justify-end space-x-1">
-                  <div className="text-xs font-semibold text-[#5A5A40]">{currentUser.name}</div>
+                  <div className="text-xs font-semibold text-[#5A5A40] flex items-center space-x-1">
+                    <span>{currentUser.name}</span>
+                    {currentUser.role === 'admin' && adminAuthSession?.isAuthenticated && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded-md border border-emerald-300">
+                        Verified
+                      </span>
+                    )}
+                  </div>
                   {onUpdateUserName && (
                     <button
                       type="button"
@@ -146,7 +173,7 @@ export const Header: React.FC<HeaderProps> = ({
                   )}
                 </div>
                 <div className="text-[11px] text-[#7C7C6D] flex items-center justify-end space-x-1">
-                  <span>{currentUser.title || currentUser.role}</span>
+                  <span>{currentUser.title || (currentUser.role === 'admin' ? 'Facility Administrator' : currentUser.role)}</span>
                 </div>
               </div>
             )}

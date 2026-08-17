@@ -1,4 +1,41 @@
-import { Resident, CareLog, FamilyMessage, UserProfile, MorningVitalsRecord } from '../types';
+import { Resident, CareLog, FamilyMessage, UserProfile, MorningVitalsRecord, RegisteredAdmin } from '../types';
+
+export const INITIAL_REGISTERED_ADMINS: RegisteredAdmin[] = [
+  {
+    id: 'radmin_1',
+    name: 'Administrator',
+    email: 'admin@careconnect.com',
+    title: 'Operations & Care Director',
+    status: 'active',
+    registeredAt: '2026-01-10T08:00:00.000Z',
+    lastLoginAt: '2026-08-16T20:15:00.000Z',
+  },
+  {
+    id: 'radmin_2',
+    name: 'Chief Admin',
+    email: 'orangeredtravel@gmail.com',
+    title: 'Chief Medical & Facility Director',
+    status: 'active',
+    registeredAt: '2026-02-01T09:00:00.000Z',
+    lastLoginAt: '2026-08-16T22:30:00.000Z',
+  },
+  {
+    id: 'radmin_3',
+    name: 'Director of Nursing',
+    email: 'director@careconnect.com',
+    title: 'Clinical Care & Quality Director',
+    status: 'active',
+    registeredAt: '2026-03-15T10:30:00.000Z',
+  },
+  {
+    id: 'radmin_4',
+    name: 'Operations Manager',
+    email: 'operations@careconnect.com',
+    title: 'Shift & Compliance Lead',
+    status: 'active',
+    registeredAt: '2026-04-20T11:00:00.000Z',
+  },
+];
 
 export const INITIAL_USERS: UserProfile[] = [
   {

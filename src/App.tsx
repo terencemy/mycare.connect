@@ -3,6 +3,7 @@ import { Header } from './components/Header';
 import { CaregiverView } from './components/Caregiver/CaregiverView';
 import { FamilyPortalView } from './components/Family/FamilyPortalView';
 import { AdminDashboardView } from './components/Admin/AdminDashboardView';
+import { AdminAuthModal } from './components/Admin/AdminAuthModal';
 import {
   Resident,
   CareLog,
@@ -10,6 +11,7 @@ import {
   UserProfile,
   UserRole,
   MorningVitalsRecord,
+  AdminAuthSession,
 } from './types';
 import { INITIAL_USERS, INITIAL_RESIDENTS, INITIAL_CARE_LOGS, INITIAL_FAMILY_MESSAGES, INITIAL_MORNING_VITALS } from './data/mockData';
 import {
@@ -43,6 +45,78 @@ export default function App() {
   const [familyMessages, setFamilyMessages] = useState<FamilyMessage[]>(INITIAL_FAMILY_MESSAGES);
   const [morningVitals, setMorningVitals] = useState<MorningVitalsRecord[]>(INITIAL_MORNING_VITALS);
   const [loading, setLoading] = useState(true);
+
+  // Admin Email Verification & Authentication Session
+  const [adminAuthSession, setAdminAuthSession] = useState<AdminAuthSession>(() => {
+    try {
+      const saved = sessionStorage.getItem('careconnect_admin_session');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn('SessionStorage error:', e);
+    }
+    return { isAuthenticated: false };
+  });
+  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(false);
+
+  // Handle Role Selection with Admin Gate Enforcement
+  const handleSelectRole = (role: UserRole) => {
+    if (role === 'admin') {
+      if (!adminAuthSession.isAuthenticated) {
+        setIsAdminAuthModalOpen(true);
+        return;
+      }
+    }
+    setCurrentRole(role);
+  };
+
+  // On successful admin verification
+  const handleAdminAuthSuccess = (verifiedAdmin: UserProfile, token: string) => {
+    const newSession: AdminAuthSession = {
+      isAuthenticated: true,
+      email: verifiedAdmin.email,
+      name: verifiedAdmin.name,
+      title: verifiedAdmin.title,
+      verifiedAt: new Date().toISOString(),
+      token,
+    };
+    setAdminAuthSession(newSession);
+    try {
+      sessionStorage.setItem('careconnect_admin_session', JSON.stringify(newSession));
+    } catch (e) {
+      console.warn('Session storage error:', e);
+    }
+
+    // Update admin profile in users list
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.role === 'admin'
+          ? {
+              ...u,
+              id: verifiedAdmin.id || u.id,
+              name: verifiedAdmin.name,
+              email: verifiedAdmin.email,
+              title: verifiedAdmin.title || u.title,
+            }
+          : u
+      )
+    );
+
+    setIsAdminAuthModalOpen(false);
+    setCurrentRole('admin');
+  };
+
+  // Lock Admin Session & Sign Out
+  const handleLockAdminSession = () => {
+    try {
+      sessionStorage.removeItem('careconnect_admin_session');
+    } catch (e) {
+      console.warn('SessionStorage error:', e);
+    }
+    setAdminAuthSession({ isAuthenticated: false });
+    setCurrentRole('caregiver');
+  };
 
   // Update User Profile / Caregiver Name handler
   const handleUpdateUserName = (newName: string) => {
@@ -164,13 +238,18 @@ export default function App() {
     }
   };
 
-  // Handler: Publish new Care Log
+  // Handler: Publish new Care Log (Defaults to pending admin approval)
   const handlePublishLog = async (newLogData: Partial<CareLog>) => {
+    const payload = {
+      ...newLogData,
+      approvalStatus: newLogData.approvalStatus || 'pending_approval',
+    };
+
     try {
       const response = await fetch('/api/care-logs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newLogData),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -184,6 +263,7 @@ export default function App() {
           familyLikesCount: 0,
           familyCommentsCount: 0,
           flaggedForAdminReview: false,
+          approvalStatus: 'pending_approval',
           ...(newLogData as CareLog),
         };
         setCareLogs((prev) => [fallback, ...prev]);
@@ -191,6 +271,96 @@ export default function App() {
     } catch (err) {
       console.error('Failed to post care log:', err);
     }
+  };
+
+  // Handler: Admin approves / rejects a Caregiver update
+  const handleApproveCareLog = async (
+    logId: string,
+    status: 'approved' | 'rejected',
+    reviewNotes?: string
+  ) => {
+    try {
+      const response = await fetch(`/api/care-logs/${logId}/approval`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status,
+          adminName: currentUser.name,
+          reviewNotes,
+        }),
+      });
+
+      if (response.ok) {
+        const updated: CareLog = await response.json();
+        setCareLogs((prev) => prev.map((l) => (l.id === logId ? updated : l)));
+      } else {
+        setCareLogs((prev) =>
+          prev.map((l) =>
+            l.id === logId
+              ? {
+                  ...l,
+                  approvalStatus: status,
+                  approvedByAdminName: currentUser.name,
+                  approvedAt: status === 'approved' ? new Date().toISOString() : undefined,
+                  adminReviewNotes: reviewNotes,
+                }
+              : l
+          )
+        );
+      }
+    } catch (err) {
+      console.error('Failed to update care log approval status:', err);
+      // Optimistic local update
+      setCareLogs((prev) =>
+        prev.map((l) =>
+          l.id === logId
+            ? {
+                ...l,
+                approvalStatus: status,
+                approvedByAdminName: currentUser.name,
+                approvedAt: status === 'approved' ? new Date().toISOString() : undefined,
+                adminReviewNotes: reviewNotes,
+              }
+            : l
+        )
+      );
+    }
+  };
+
+  // Handler: Admin bulk approves all pending caregiver updates
+  const handleBulkApproveCareLogs = async () => {
+    try {
+      const response = await fetch('/api/care-logs/bulk-approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminName: currentUser.name }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.logs) {
+          setCareLogs(data.logs);
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to bulk approve care logs:', err);
+    }
+
+    // Local fallback
+    const now = new Date().toISOString();
+    setCareLogs((prev) =>
+      prev.map((l) =>
+        l.approvalStatus === 'pending_approval' || !l.approvalStatus
+          ? {
+              ...l,
+              approvalStatus: 'approved',
+              approvedByAdminName: currentUser.name,
+              approvedAt: now,
+            }
+          : l
+      )
+    );
   };
 
   // Handler: Send Family Inquiry / Message (Intercepted to Admin)
@@ -398,9 +568,11 @@ export default function App() {
       {/* Global Navigation Header */}
       <Header
         currentUser={currentUser}
-        onSelectRole={setCurrentRole}
+        onSelectRole={handleSelectRole}
         pendingInquiriesCount={pendingInquiriesCount}
         onUpdateUserName={handleUpdateUserName}
+        adminAuthSession={adminAuthSession}
+        onLockAdminSession={handleLockAdminSession}
       />
 
       {/* Main Container */}
@@ -435,13 +607,24 @@ export default function App() {
             careLogs={careLogs}
             familyMessages={familyMessages}
             morningVitals={morningVitals}
+            adminAuthSession={adminAuthSession}
+            onLockAdminSession={handleLockAdminSession}
             onRespondMessage={handleRespondMessage}
+            onApproveCareLog={handleApproveCareLog}
+            onBulkApproveCareLogs={handleBulkApproveCareLogs}
             onAddResident={handleAddResident}
             onUpdateResident={handleUpdateResident}
             onDeleteResident={handleDeleteResident}
           />
         )}
       </main>
+
+      {/* Admin Email Verification Modal */}
+      <AdminAuthModal
+        isOpen={isAdminAuthModalOpen}
+        onClose={() => setIsAdminAuthModalOpen(false)}
+        onSuccess={handleAdminAuthSuccess}
+      />
 
       {/* Footer */}
       <footer className="bg-[#FAF9F6] border-t border-[#E6E2D3] py-4 text-xs text-[#7C7C6D]">
@@ -457,7 +640,7 @@ export default function App() {
               <span>Gemini Multimodal AI</span>
             </span>
             <span>&bull;</span>
-            <span>HIPAA Compliant &amp; Supabase RLS Protected</span>
+            <span>Malaysia PDPA Compliant &amp; Supabase RLS Protected</span>
           </div>
         </div>
       </footer>

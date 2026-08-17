@@ -104,6 +104,7 @@ export interface CareLog {
   caregiverId: string;
   caregiverName: string;
   aiGeneratedFamilySummary: string;
+  familyWarmUpdate?: string;
   clinicalStaffLog: string;
   keyHighlights: string[];
   meals: MealCheck;
@@ -115,6 +116,10 @@ export interface CareLog {
   familyLikesCount: number;
   familyCommentsCount: number;
   flaggedForAdminReview: boolean;
+  approvalStatus: 'pending_approval' | 'approved' | 'rejected';
+  approvedByAdminName?: string;
+  approvedAt?: string;
+  adminReviewNotes?: string;
 }
 
 export interface FamilyMessage {
@@ -167,4 +172,23 @@ export interface GenerateCareLogResponse {
   keyHighlights: string[];
   suggestedActivitiesMentioned: string[];
   reassuranceScore: number; // 1-100
+}
+
+export interface RegisteredAdmin {
+  id: string;
+  name: string;
+  email: string;
+  title: string;
+  status: 'active' | 'inactive';
+  registeredAt: string;
+  lastLoginAt?: string;
+}
+
+export interface AdminAuthSession {
+  isAuthenticated: boolean;
+  email?: string;
+  name?: string;
+  title?: string;
+  verifiedAt?: string;
+  token?: string;
 }

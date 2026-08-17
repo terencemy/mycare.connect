@@ -8,6 +8,8 @@ import {
   UserProfile,
   MorningVitalsRecord,
   BED_IDENTIFIER_OPTIONS,
+  RegisteredAdmin,
+  AdminAuthSession,
 } from '../../types';
 import {
   ShieldAlert,
@@ -39,6 +41,12 @@ import {
   CloudCheck,
   UploadCloud,
   X,
+  Lock,
+  UserPlus,
+  UserCheck,
+  Shield,
+  KeyRound,
+  LogOut,
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -47,7 +55,11 @@ interface AdminDashboardViewProps {
   careLogs: CareLog[];
   familyMessages: FamilyMessage[];
   morningVitals?: MorningVitalsRecord[];
+  adminAuthSession?: AdminAuthSession;
+  onLockAdminSession?: () => void;
   onRespondMessage: (msgId: string, responseText: string) => Promise<void>;
+  onApproveCareLog?: (logId: string, status: 'approved' | 'rejected', reviewNotes?: string) => Promise<void>;
+  onBulkApproveCareLogs?: () => Promise<void>;
   onAddResident: (res: Partial<Resident>) => Promise<void>;
   onUpdateResident?: (residentId: string, updatedFields: Partial<Resident>) => Promise<void>;
   onDeleteResident?: (residentId: string) => Promise<void>;
@@ -59,13 +71,110 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   careLogs,
   familyMessages,
   morningVitals = [],
+  adminAuthSession,
+  onLockAdminSession,
   onRespondMessage,
+  onApproveCareLog,
+  onBulkApproveCareLogs,
   onAddResident,
   onUpdateResident,
   onDeleteResident,
 }) => {
-  const [activeTab, setActiveTab] = useState<'triage' | 'care_logs' | 'vitals_audit' | 'residents' | 'analytics' | 'supabase_schema'>('triage');
+  const [activeTab, setActiveTab] = useState<'triage' | 'care_logs' | 'vitals_audit' | 'residents' | 'analytics' | 'supabase_schema' | 'admin_security'>('triage');
   const [careLogSearch, setCareLogSearch] = useState('');
+  const [careLogStatusFilter, setCareLogStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [isApprovingLogId, setIsApprovingLogId] = useState<string | null>(null);
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
+  const [rejectionModal, setRejectionModal] = useState<{ isOpen: boolean; log: CareLog | null; reason: string }>({
+    isOpen: false,
+    log: null,
+    reason: '',
+  });
+  const [approvalToast, setApprovalToast] = useState<{ type: 'success' | 'info'; message: string } | null>(null);
+
+  // Registered Admin Management States
+  const [registeredAdmins, setRegisteredAdmins] = useState<RegisteredAdmin[]>([]);
+  const [isLoadingAdmins, setIsLoadingAdmins] = useState(false);
+  const [newAdminForm, setNewAdminForm] = useState({ name: '', email: '', title: '' });
+  const [isSubmittingAdmin, setIsSubmittingAdmin] = useState(false);
+  const [adminSecurityMsg, setAdminSecurityMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Load registered admins
+  const loadRegisteredAdmins = async () => {
+    setIsLoadingAdmins(true);
+    try {
+      const res = await fetch('/api/auth/admin/registered-directory');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setRegisteredAdmins(data);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load registered admins:', e);
+    } finally {
+      setIsLoadingAdmins(false);
+    }
+  };
+
+  React.useEffect(() => {
+    loadRegisteredAdmins();
+  }, []);
+
+  const handleRegisterNewAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdminForm.name.trim() || !newAdminForm.email.trim()) {
+      setAdminSecurityMsg({ type: 'error', text: 'Admin name and registered email are required.' });
+      return;
+    }
+
+    setIsSubmittingAdmin(true);
+    setAdminSecurityMsg(null);
+
+    try {
+      const res = await fetch('/api/auth/admin/register-admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newAdminForm),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminSecurityMsg({ type: 'error', text: data.message || 'Failed to register admin' });
+      } else {
+        setAdminSecurityMsg({ type: 'success', text: `✓ Administrator ${newAdminForm.name} (${newAdminForm.email}) is now registered and authorized to verify.` });
+        setNewAdminForm({ name: '', email: '', title: '' });
+        await loadRegisteredAdmins();
+      }
+    } catch (err: any) {
+      setAdminSecurityMsg({ type: 'error', text: 'Network error registering admin.' });
+    } finally {
+      setIsSubmittingAdmin(false);
+    }
+  };
+
+  const handleToggleAdminStatus = async (adminId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    try {
+      const res = await fetch(`/api/auth/admin/registered/${adminId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        setRegisteredAdmins((prev) =>
+          prev.map((a) => (a.id === adminId ? { ...a, status: newStatus as any } : a))
+        );
+        setAdminSecurityMsg({
+          type: 'success',
+          text: `Admin status changed to ${newStatus.toUpperCase()}`,
+        });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<string | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<FamilyMessage | null>(
     familyMessages.find((m) => m.status === 'intercepted_pending_admin') || familyMessages[0] || null
@@ -79,6 +188,90 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   // Bulk Supabase Sync State & Feedback
   const [isSyncingAllSupabase, setIsSyncingAllSupabase] = useState(false);
   const [syncToast, setSyncToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Approval Handlers
+  const handleApprove = async (log: CareLog) => {
+    setIsApprovingLogId(log.id);
+    try {
+      if (onApproveCareLog) {
+        await onApproveCareLog(log.id, 'approved');
+      }
+      setApprovalToast({
+        type: 'success',
+        message: `✓ Care update for ${log.residentFullName} has been approved and published to the Family Portal!`,
+      });
+      setTimeout(() => setApprovalToast(null), 4000);
+    } catch (err) {
+      console.error('Approval failed:', err);
+    } finally {
+      setIsApprovingLogId(null);
+    }
+  };
+
+  const handleOpenRejectModal = (log: CareLog) => {
+    setRejectionModal({
+      isOpen: true,
+      log,
+      reason: log.adminReviewNotes || '',
+    });
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectionModal.log) return;
+    const targetLog = rejectionModal.log;
+    setIsApprovingLogId(targetLog.id);
+    try {
+      if (onApproveCareLog) {
+        await onApproveCareLog(targetLog.id, 'rejected', rejectionModal.reason || 'Revisions requested by Administrator.');
+      }
+      setApprovalToast({
+        type: 'info',
+        message: `Caregiver update for ${targetLog.residentFullName} marked as revision requested. It remains hidden from family feed.`,
+      });
+      setTimeout(() => setApprovalToast(null), 4000);
+      setRejectionModal({ isOpen: false, log: null, reason: '' });
+    } catch (err) {
+      console.error('Rejection failed:', err);
+    } finally {
+      setIsApprovingLogId(null);
+    }
+  };
+
+  const handleRevokeApproval = async (log: CareLog) => {
+    setIsApprovingLogId(log.id);
+    try {
+      if (onApproveCareLog) {
+        await onApproveCareLog(log.id, 'pending_approval', 'Approval revoked for administrative review.');
+      }
+      setApprovalToast({
+        type: 'info',
+        message: `Care update for ${log.residentFullName} returned to pending approval status.`,
+      });
+      setTimeout(() => setApprovalToast(null), 4000);
+    } catch (err) {
+      console.error('Revoke failed:', err);
+    } finally {
+      setIsApprovingLogId(null);
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    setIsBulkApproving(true);
+    try {
+      if (onBulkApproveCareLogs) {
+        await onBulkApproveCareLogs();
+      }
+      setApprovalToast({
+        type: 'success',
+        message: `✓ All pending caregiver updates have been approved and published to family feeds!`,
+      });
+      setTimeout(() => setApprovalToast(null), 4000);
+    } catch (err) {
+      console.error('Bulk approval failed:', err);
+    } finally {
+      setIsBulkApproving(false);
+    }
+  };
 
   const handleSyncAllResidents = async () => {
     setIsSyncingAllSupabase(true);
@@ -449,10 +642,42 @@ CREATE POLICY "Allow public insert on family_messages" ON public.family_messages
 CREATE POLICY "Allow public update on family_messages" ON public.family_messages FOR UPDATE USING (true);
 `;
 
+  const pendingCareLogs = careLogs.filter(
+    (l) => l.approvalStatus === 'pending_approval' || !l.approvalStatus
+  );
+  const approvedCareLogs = careLogs.filter((l) => l.approvalStatus === 'approved');
+  const rejectedCareLogs = careLogs.filter((l) => l.approvalStatus === 'rejected');
+
   return (
     <div className="space-y-6">
+      {/* Toast Notification Banner */}
+      {approvalToast && (
+        <div
+          className={`p-4 rounded-2xl border flex items-center justify-between shadow-xs transition-all animate-in fade-in ${
+            approvalToast.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-[#F0ECE2] border-[#E6E2D3] text-[#5A5A40]'
+          }`}
+        >
+          <div className="flex items-center space-x-2.5">
+            {approvalToast.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            ) : (
+              <ShieldAlert className="w-5 h-5 text-[#889E81] shrink-0" />
+            )}
+            <span className="text-xs font-bold">{approvalToast.message}</span>
+          </div>
+          <button
+            onClick={() => setApprovalToast(null)}
+            className="text-xs opacity-60 hover:opacity-100 p-1 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Top Banner & Metric Counters */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-[24px] border border-[#E6E2D3] shadow-xs flex items-center space-x-3">
           <div className="w-10 h-10 rounded-2xl bg-[#F0ECE2] text-[#5A5A40] flex items-center justify-center font-bold shrink-0 border border-[#E6E2D3]">
             <ShieldAlert className="w-5 h-5 text-[#889E81]" />
@@ -467,13 +692,36 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-[24px] border border-[#E6E2D3] shadow-xs flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#EBF1EA] text-[#5A5A40] flex items-center justify-center font-bold shrink-0 border border-[#889E81]/30">
-            <Sparkles className="w-5 h-5 text-[#889E81]" />
+        <div className={`bg-white p-4 rounded-[24px] border shadow-xs flex items-center space-x-3 transition-all ${
+          pendingCareLogs.length > 0 ? 'border-amber-400/80 bg-amber-50/20' : 'border-[#E6E2D3]'
+        }`}>
+          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold shrink-0 border ${
+            pendingCareLogs.length > 0
+              ? 'bg-amber-100 text-amber-800 border-amber-300'
+              : 'bg-[#EBF1EA] text-[#5A5A40] border-[#889E81]/30'
+          }`}>
+            <Clock className={`w-5 h-5 ${pendingCareLogs.length > 0 ? 'text-amber-700 animate-pulse' : 'text-[#889E81]'}`} />
           </div>
           <div>
-            <div className="text-xl font-serif font-bold text-[#5A5A40]">{careLogs.length}</div>
-            <div className="text-xs text-[#7C7C6D] font-medium">AI Care Logs Published</div>
+            <div className="text-xl font-serif font-bold text-[#5A5A40] flex items-center space-x-2">
+              <span>{pendingCareLogs.length}</span>
+              {pendingCareLogs.length > 0 && (
+                <span className="text-[10px] uppercase tracking-wider font-extrabold bg-amber-500 text-white px-2 py-0.5 rounded-full">
+                  Action Req.
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-[#7C7C6D] font-medium">Caregiver Updates Awaiting Approval</div>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-[24px] border border-[#E6E2D3] shadow-xs flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-800 flex items-center justify-center font-bold shrink-0 border border-emerald-200">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div>
+            <div className="text-xl font-serif font-bold text-[#5A5A40]">{approvedCareLogs.length}</div>
+            <div className="text-xs text-[#7C7C6D] font-medium">Approved &amp; Live for Family</div>
           </div>
         </div>
 
@@ -513,7 +761,12 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
           }`}
         >
           <Sparkles className="w-4 h-4 text-[#889E81]" />
-          <span>Caregiver Updates &amp; Media ({careLogs.length})</span>
+          <span>Caregiver Approvals &amp; Media Feed ({careLogs.length})</span>
+          {pendingCareLogs.length > 0 && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white animate-pulse">
+              {pendingCareLogs.length} Pending
+            </span>
+          )}
         </button>
 
         <button
@@ -557,30 +810,56 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
           <Database className="w-4 h-4 text-[#889E81]" />
           <span>Supabase / PostgreSQL Schema</span>
         </button>
+
+        <button
+          id="admin-tab-security"
+          onClick={() => setActiveTab('admin_security')}
+          className={`pb-3 px-4 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors cursor-pointer shrink-0 ${
+            activeTab === 'admin_security'
+              ? 'border-[#889E81] text-[#5A5A40]'
+              : 'border-transparent text-[#7C7C6D] hover:text-[#4A4A40]'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4 text-[#889E81]" />
+          <span>Admin Security &amp; Registry ({registeredAdmins.length})</span>
+        </button>
       </div>
 
-      {/* TAB: CAREGIVER UPDATES & MEDIA FEED */}
+      {/* TAB: CAREGIVER UPDATES & APPROVALS FEED */}
       {activeTab === 'care_logs' && (
         <div className="space-y-6 animate-in fade-in duration-200">
-          <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-[24px] p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-[24px] p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
             <div>
               <div className="flex items-center space-x-2 mb-1">
                 <Sparkles className="w-5 h-5 text-[#889E81]" />
                 <h3 className="text-base font-serif font-bold text-[#5A5A40]">
-                  Caregiver Shift Updates &amp; Photo Audit Feed
+                  Caregiver Shift Updates &amp; Admin Approval Desk
                 </h3>
               </div>
-              <p className="text-xs text-[#7C7C6D]">
-                Review all caregiver shift updates, activity photos, dual vitals watermarks, meal telemetry, and AI synthesized family reports in real time.
+              <p className="text-xs text-[#7C7C6D] max-w-2xl leading-relaxed">
+                <strong>Mandatory Approval Policy:</strong> Every caregiver shift update must be verified and approved by the administrator before it is published to the Family Portal. Audit attached media, dual vitals watermarks, meal telemetry, and narratives below.
               </p>
             </div>
 
-            <div className="flex items-center space-x-2 w-full sm:w-auto">
-              <div className="relative w-full sm:w-64">
+            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+              {pendingCareLogs.length > 0 && (
+                <button
+                  id="admin-bulk-approve-care-logs-btn"
+                  type="button"
+                  onClick={handleBulkApprove}
+                  disabled={isBulkApproving}
+                  className="px-4 py-2 bg-[#889E81] hover:bg-[#788E71] text-white text-xs font-bold rounded-xl shadow-xs flex items-center space-x-2 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{isBulkApproving ? 'Approving All...' : `Approve All (${pendingCareLogs.length}) Pending`}</span>
+                </button>
+              )}
+
+              <div className="relative w-full sm:w-60">
                 <Search className="w-4 h-4 text-[#8C8C7E] absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Search resident, room..."
+                  placeholder="Search resident, room, staff..."
                   value={careLogSearch}
                   onChange={(e) => setCareLogSearch(e.target.value)}
                   className="w-full pl-9 pr-4 py-2 bg-white border border-[#E6E2D3] rounded-xl text-xs text-[#5A5A40] placeholder-[#8C8C7E] focus:outline-hidden focus:border-[#889E81]"
@@ -589,18 +868,78 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
             </div>
           </div>
 
+          {/* Sub-Filter Tabs */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setCareLogStatusFilter('all')}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                careLogStatusFilter === 'all'
+                  ? 'bg-[#5A5A40] text-white'
+                  : 'bg-white border border-[#E6E2D3] text-[#7C7C6D] hover:text-[#5A5A40]'
+              }`}
+            >
+              All Updates ({careLogs.length})
+            </button>
+
+            <button
+              onClick={() => setCareLogStatusFilter('pending')}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 ${
+                careLogStatusFilter === 'pending'
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-white border border-amber-300 text-amber-800 hover:bg-amber-50'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>Pending Admin Approval ({pendingCareLogs.length})</span>
+            </button>
+
+            <button
+              onClick={() => setCareLogStatusFilter('approved')}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 ${
+                careLogStatusFilter === 'approved'
+                  ? 'bg-emerald-700 text-white'
+                  : 'bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-50'
+              }`}
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Approved &amp; Live for Family ({approvedCareLogs.length})</span>
+            </button>
+
+            <button
+              onClick={() => setCareLogStatusFilter('rejected')}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 ${
+                careLogStatusFilter === 'rejected'
+                  ? 'bg-rose-700 text-white'
+                  : 'bg-white border border-rose-300 text-rose-800 hover:bg-rose-50'
+              }`}
+            >
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>Revision Requested ({rejectedCareLogs.length})</span>
+            </button>
+          </div>
+
           {careLogs.length === 0 ? (
             <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-12 text-center space-y-3">
               <Sparkles className="w-10 h-10 text-[#8C8C7E] mx-auto opacity-50" />
               <h4 className="text-sm font-bold text-[#5A5A40]">No Caregiver Updates Logged Yet</h4>
               <p className="text-xs text-[#7C7C6D] max-w-md mx-auto">
-                When care staff record shift updates in the Caregiver module, all media photos, meal logs, and vitals will appear here in chronological order.
+                When care staff record shift updates in the Caregiver module, all media photos, meal logs, and vitals will appear here for admin review and approval.
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-5">
               {careLogs
                 .filter((log) => {
+                  // Filter by status
+                  const isPending = log.approvalStatus === 'pending_approval' || !log.approvalStatus;
+                  const isApproved = log.approvalStatus === 'approved';
+                  const isRejected = log.approvalStatus === 'rejected';
+
+                  if (careLogStatusFilter === 'pending' && !isPending) return false;
+                  if (careLogStatusFilter === 'approved' && !isApproved) return false;
+                  if (careLogStatusFilter === 'rejected' && !isRejected) return false;
+
+                  // Search query
                   if (!careLogSearch) return true;
                   const q = careLogSearch.toLowerCase();
                   return (
@@ -615,12 +954,101 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                   const hasVitalsPhoto1 = !!log.vitals?.vitalsPhotoUrl;
                   const hasVitalsPhoto2 = !!log.vitals?.secondaryVitalsPhotoUrl;
                   const totalPhotos = [hasActivityPhoto, hasVitalsPhoto1, hasVitalsPhoto2].filter(Boolean).length;
+                  const isPending = log.approvalStatus === 'pending_approval' || !log.approvalStatus;
+                  const isApproved = log.approvalStatus === 'approved';
+                  const isRejected = log.approvalStatus === 'rejected';
 
                   return (
                     <div
                       key={log.id}
-                      className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-2xs space-y-4 hover:border-[#889E81]/60 transition-all"
+                      className={`bg-white rounded-[24px] border p-5 shadow-xs space-y-4 transition-all ${
+                        isPending
+                          ? 'border-amber-300 ring-1 ring-amber-200'
+                          : isApproved
+                          ? 'border-[#E6E2D3] hover:border-[#889E81]/60'
+                          : 'border-rose-300 bg-rose-50/10'
+                      }`}
                     >
+                      {/* Approval Status Alert Banner */}
+                      <div
+                        className={`p-3 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs ${
+                          isPending
+                            ? 'bg-amber-50 border border-amber-200 text-amber-900'
+                            : isApproved
+                            ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+                            : 'bg-rose-50 border border-rose-200 text-rose-900'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2">
+                          {isPending ? (
+                            <Clock className="w-4 h-4 text-amber-700 animate-pulse shrink-0" />
+                          ) : isApproved ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-rose-700 shrink-0" />
+                          )}
+                          <span className="font-bold">
+                            {isPending
+                              ? 'Awaiting Admin Verification & Approval (Hidden from Family Portal)'
+                              : isApproved
+                              ? `Approved & Live on Family Portal (Approved by ${log.approvedByAdminName || 'Admin'}${
+                                  log.approvedAt
+                                    ? ` at ${new Date(log.approvedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                                    : ''
+                                })`
+                              : `Revision Requested by ${log.approvedByAdminName || 'Admin'} (Hidden from Family Feed)`}
+                          </span>
+                        </div>
+
+                        {/* Direct Header Actions */}
+                        <div className="flex items-center space-x-2 shrink-0">
+                          {isPending && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleApprove(log)}
+                                disabled={isApprovingLogId === log.id}
+                                className="px-3.5 py-1.5 bg-[#889E81] hover:bg-[#788E71] text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 transition-all cursor-pointer disabled:opacity-50"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>{isApprovingLogId === log.id ? 'Approving...' : 'Approve & Publish'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenRejectModal(log)}
+                                disabled={isApprovingLogId === log.id}
+                                className="px-3 py-1.5 bg-white border border-rose-300 text-rose-700 hover:bg-rose-50 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                              >
+                                <span>Reject / Revise</span>
+                              </button>
+                            </>
+                          )}
+
+                          {isApproved && (
+                            <button
+                              type="button"
+                              onClick={() => handleRevokeApproval(log)}
+                              disabled={isApprovingLogId === log.id}
+                              className="px-3 py-1 bg-white border border-[#E6E2D3] text-[#7C7C6D] hover:text-[#5A5A40] text-xs font-semibold rounded-lg transition-all cursor-pointer"
+                            >
+                              Revoke Approval
+                            </button>
+                          )}
+
+                          {isRejected && (
+                            <button
+                              type="button"
+                              onClick={() => handleApprove(log)}
+                              disabled={isApprovingLogId === log.id}
+                              className="px-3.5 py-1.5 bg-[#889E81] hover:bg-[#788E71] text-white font-bold text-xs rounded-xl shadow-xs flex items-center space-x-1.5 transition-all cursor-pointer"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Re-Approve &amp; Publish</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
                       {/* Header: Resident & Caregiver Info */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E6E2D3] pb-3">
                         <div className="flex items-center space-x-3">
@@ -635,7 +1063,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                               </span>
                             </div>
                             <span className="text-[11px] text-[#7C7C6D]">
-                              Logged by <strong className="text-[#5A5A40]">{log.caregiverName}</strong> &bull;{' '}
+                              Submitted by Caregiver <strong className="text-[#5A5A40]">{log.caregiverName}</strong> &bull;{' '}
                               {new Date(log.timestamp).toLocaleString([], {
                                 month: 'short',
                                 day: 'numeric',
@@ -647,9 +1075,8 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                         </div>
 
                         <div className="flex items-center space-x-2">
-                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center space-x-1">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            <span>Caregiver Published</span>
+                          <span className="text-[11px] text-[#8C8C7E]">
+                            ID: <span className="font-mono">{log.id.slice(-6)}</span>
                           </span>
                         </div>
                       </div>
@@ -800,6 +1227,44 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                           </p>
                         </div>
                       </div>
+
+                      {/* Revision Notes if present */}
+                      {log.adminReviewNotes && (
+                        <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                          <div className="font-bold flex items-center space-x-1.5 mb-0.5">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
+                            <span>Supervisor Feedback / Revision Note:</span>
+                          </div>
+                          <p className="italic pl-5">{log.adminReviewNotes}</p>
+                        </div>
+                      )}
+
+                      {/* Bottom Large Action Bar for Pending updates */}
+                      {isPending && (
+                        <div className="pt-2 border-t border-[#E6E2D3] flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#FAF9F6] -mx-5 -mb-5 p-4 rounded-b-[24px]">
+                          <div className="text-xs text-[#7C7C6D]">
+                            Ready for family viewing? Click approve to instantly push to the Family Portal feed.
+                          </div>
+                          <div className="flex items-center space-x-2 w-full sm:w-auto">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenRejectModal(log)}
+                              className="w-full sm:w-auto px-4 py-2.5 bg-white border border-rose-300 text-rose-700 hover:bg-rose-50 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                            >
+                              Request Revision
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApprove(log)}
+                              disabled={isApprovingLogId === log.id}
+                              className="w-full sm:w-auto px-5 py-2.5 bg-[#889E81] hover:bg-[#788E71] text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center space-x-2 transition-all cursor-pointer disabled:opacity-50"
+                            >
+                              <Check className="w-4 h-4" />
+                              <span>{isApprovingLogId === log.id ? 'Approving...' : 'Approve & Publish to Family Portal'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1682,6 +2147,227 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
         </div>
       )}
 
+      {/* TAB: ADMIN SECURITY & REGISTERED DIRECTORY */}
+      {activeTab === 'admin_security' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Active Session & PDPA Security Status */}
+          <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-[24px] p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-start space-x-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#5A5A40] text-white flex items-center justify-center shadow-xs shrink-0">
+                <ShieldCheck className="w-6 h-6 text-[#889E81]" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <h3 className="font-serif text-lg font-bold text-[#5A5A40]">
+                    Administrative Access &amp; Identity Security
+                  </h3>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    Malaysia PDPA Enforced
+                  </span>
+                </div>
+                <p className="text-xs text-[#7C7C6D] max-w-2xl leading-relaxed">
+                  Strict email verification is active. Only email addresses pre-registered in this authorized directory can receive 6-digit One-Time Passwords (OTP) to unlock the Admin Portal.
+                </p>
+                {adminAuthSession && adminAuthSession.isAuthenticated && (
+                  <div className="text-[11px] text-[#5A5A40] pt-1 flex items-center space-x-2">
+                    <span>Active Authenticated Session:</span>
+                    <strong className="text-[#889E81]">{adminAuthSession.name}</strong>
+                    <span>({adminAuthSession.email})</span>
+                    {adminAuthSession.verifiedAt && (
+                      <span className="text-[#8C8C7E]">
+                        &bull; Verified {new Date(adminAuthSession.verifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {onLockAdminSession && (
+              <button
+                type="button"
+                id="admin-security-lock-session-btn"
+                onClick={onLockAdminSession}
+                className="px-4 py-2.5 bg-white hover:bg-rose-50 border border-[#E6E2D3] hover:border-rose-300 text-rose-700 rounded-full text-xs font-bold shadow-2xs flex items-center space-x-2 cursor-pointer shrink-0 transition-colors"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Lock Session / Sign Out</span>
+              </button>
+            )}
+          </div>
+
+          {/* Feedback Toast */}
+          {adminSecurityMsg && (
+            <div
+              className={`p-4 rounded-2xl text-xs font-medium flex items-center justify-between border ${
+                adminSecurityMsg.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  : 'bg-rose-50 text-rose-800 border-rose-200'
+              }`}
+            >
+              <span>{adminSecurityMsg.text}</span>
+              <button
+                onClick={() => setAdminSecurityMsg(null)}
+                className="text-xs font-bold underline cursor-pointer ml-4"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left Column: Registered Admin List (2 Cols) */}
+            <div className="lg:col-span-2 space-y-4">
+              <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-6 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <UserCheck className="w-5 h-5 text-[#889E81]" />
+                    <h4 className="text-base font-serif font-bold text-[#5A5A40]">
+                      Authorized Administrator Directory
+                    </h4>
+                  </div>
+                  <span className="text-xs font-bold text-[#7C7C6D] bg-[#FAF9F6] border border-[#E6E2D3] px-3 py-1 rounded-full">
+                    {registeredAdmins.filter((a) => a.status === 'active').length} Active Admins
+                  </span>
+                </div>
+
+                <div className="divide-y divide-[#E6E2D3]">
+                  {registeredAdmins.map((admin) => (
+                    <div
+                      key={admin.id}
+                      className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="flex items-start space-x-3">
+                        <div className="w-10 h-10 rounded-2xl bg-[#EBF1EA] text-[#5A5A40] font-bold text-xs flex items-center justify-center shrink-0 border border-[#889E81]/30">
+                          {admin.name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs font-bold text-[#5A5A40]">{admin.name}</span>
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.2 rounded-full border ${
+                                admin.status === 'active'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-stone-100 text-stone-500 border-stone-200'
+                              }`}
+                            >
+                              {admin.status === 'active' ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                          <div className="text-xs font-mono text-[#889E81]">{admin.email}</div>
+                          <div className="text-[11px] text-[#7C7C6D]">
+                            <span>{admin.title}</span>
+                            {admin.lastLoginAt && (
+                              <span> &bull; Last login: {new Date(admin.lastLoginAt).toLocaleDateString()}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-2 self-end sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAdminStatus(admin.id, admin.status)}
+                          className={`text-xs px-3 py-1.5 rounded-xl font-semibold border transition-colors cursor-pointer ${
+                            admin.status === 'active'
+                              ? 'bg-white hover:bg-rose-50 text-[#7C7C6D] hover:text-rose-700 border-[#E6E2D3]'
+                              : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                          }`}
+                        >
+                          {admin.status === 'active' ? 'Deactivate' : 'Reactivate'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Register New Administrator Form */}
+            <div className="space-y-4">
+              <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-6 shadow-xs space-y-4">
+                <div className="flex items-center space-x-2">
+                  <UserPlus className="w-5 h-5 text-[#889E81]" />
+                  <h4 className="text-sm font-serif font-bold text-[#5A5A40]">
+                    Register New Administrator
+                  </h4>
+                </div>
+                <p className="text-xs text-[#7C7C6D] leading-relaxed">
+                  Add authorized facility staff. Once registered, they will be able to receive OTP verification codes and access the Admin Portal.
+                </p>
+
+                <form onSubmit={handleRegisterNewAdmin} className="space-y-3.5">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-[#5A5A40] block">Full Name</label>
+                    <input
+                      type="text"
+                      value={newAdminForm.name}
+                      onChange={(e) => setNewAdminForm({ ...newAdminForm, name: e.target.value })}
+                      placeholder="e.g. Dr. Sarah Lee"
+                      required
+                      className="w-full text-xs p-3 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-hidden text-[#5A5A40]"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-[#5A5A40] block">Official Email</label>
+                    <input
+                      type="email"
+                      value={newAdminForm.email}
+                      onChange={(e) => setNewAdminForm({ ...newAdminForm, email: e.target.value })}
+                      placeholder="e.g. sarah.lee@carecenter.com"
+                      required
+                      className="w-full text-xs p-3 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-hidden text-[#5A5A40]"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-[#5A5A40] block">Role / Title</label>
+                    <input
+                      type="text"
+                      value={newAdminForm.title}
+                      onChange={(e) => setNewAdminForm({ ...newAdminForm, title: e.target.value })}
+                      placeholder="e.g. Clinical Care Supervisor"
+                      className="w-full text-xs p-3 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-hidden text-[#5A5A40]"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    id="register-new-admin-submit-btn"
+                    disabled={isSubmittingAdmin}
+                    className="w-full py-3 bg-[#889E81] hover:bg-[#788E71] text-white text-xs font-bold rounded-xl shadow-xs flex items-center justify-center space-x-2 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isSubmittingAdmin ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Registering Admin...</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="w-4 h-4" />
+                        <span>Authorize &amp; Register Admin</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+
+              {/* Security Rule Card */}
+              <div className="bg-[#F0ECE2]/60 border border-[#E6E2D3] rounded-[24px] p-5 space-y-2 text-xs text-[#5A5A40]">
+                <div className="font-bold flex items-center space-x-1.5 text-[#5A5A40]">
+                  <ShieldAlert className="w-4 h-4 text-[#889E81]" />
+                  <span>Strict Security Enforcement</span>
+                </div>
+                <p className="text-[11px] text-[#7C7C6D] leading-relaxed">
+                  Anyone attempting to log into the Admin portal with an unlisted email address will receive an instant <strong>403 Access Denied</strong> notice. Verification codes are strictly dispatched to listed addresses only.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: Admit New Resident */}
       {isAddResidentModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
@@ -2132,6 +2818,59 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                     <span>Confirm &amp; Delete</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection / Revision Request Modal */}
+      {rejectionModal.isOpen && rejectionModal.log && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-[28px] max-w-lg w-full p-6 shadow-2xl border border-[#E6E2D3] space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start space-x-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-serif font-bold text-[#5A5A40]">
+                  Request Revisions / Reject Update
+                </h3>
+                <p className="text-xs text-[#7C7C6D]">
+                  This update for <strong>{rejectionModal.log.residentFullName}</strong> will remain hidden from the Family Portal. Please describe what the caregiver needs to revise.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <label className="text-xs font-bold text-[#5A5A40] block">
+                Supervisor Feedback / Revision Instructions:
+              </label>
+              <textarea
+                value={rejectionModal.reason}
+                onChange={(e) => setRejectionModal({ ...rejectionModal, reason: e.target.value })}
+                rows={3}
+                placeholder="e.g. Please retake blood pressure monitor photo with clearer lighting, or verify lunch intake percentage."
+                className="w-full text-xs p-3 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl focus:ring-2 focus:ring-[#889E81] focus:outline-hidden text-[#5A5A40] placeholder-[#8C8C7E]"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-[#E6E2D3]">
+              <button
+                type="button"
+                onClick={() => setRejectionModal({ isOpen: false, log: null, reason: '' })}
+                className="px-4 py-2 text-xs font-semibold text-[#7C7C6D] hover:bg-[#FAF9F6] rounded-full cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={isApprovingLogId === rejectionModal.log.id}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-full shadow-xs cursor-pointer flex items-center space-x-1.5 transition-all disabled:opacity-50"
+              >
+                <AlertCircle className="w-3.5 h-3.5" />
+                <span>Confirm Revision Request</span>
               </button>
             </div>
           </div>

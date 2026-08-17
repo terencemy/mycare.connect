@@ -64,8 +64,8 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
   const activeResident =
     residents.find((r) => isResidentMatch(r, selectedResidentId)) || defaultResident;
 
-  // Filter logs & messages for active resident with resilient matching
-  const residentLogs = careLogs.filter((l) => isResidentMatch(activeResident, l));
+  // Filter logs & messages for active resident with resilient matching (Only approved logs are visible to family)
+  const residentLogs = careLogs.filter((l) => isResidentMatch(activeResident, l) && l.approvalStatus === 'approved');
   const residentMessages = familyMessages.filter((m) => isResidentMatch(activeResident, m));
 
   // Consolidate latest verified morning vitals from Morning Rounds and Care Logs
