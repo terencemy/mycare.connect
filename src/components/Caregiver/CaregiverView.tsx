@@ -91,10 +91,10 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
 
   // 3. Fast Telemetry & Checkbox State
   const [meals, setMeals] = useState<MealCheck>({
-    breakfast: '100%',
-    lunch: '100%',
-    dinner: '75%',
-    hydrationMl: 1400,
+    breakfast: 'N/A',
+    lunch: 'N/A',
+    dinner: 'N/A',
+    hydrationMl: 800,
   });
   const [selectedMood, setSelectedMood] = useState<ResidentMood>('cheerful');
   const [selectedActivities, setSelectedActivities] = useState<string[]>([
@@ -558,6 +558,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                         }
                         className="w-full text-xs font-semibold bg-white border border-[#E6E2D3] rounded-xl p-1.5 text-[#5A5A40] focus:ring-1 focus:ring-[#889E81]"
                       >
+                        <option value="N/A">N/A (Not Served / Pending)</option>
                         <option value="100%">100% (Finished)</option>
                         <option value="75%">75% (Good)</option>
                         <option value="50%">50% (Half)</option>
@@ -574,7 +575,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                   </span>
                   <input
                     type="range"
-                    min="600"
+                    min="500"
                     max="2200"
                     step="50"
                     value={meals.hydrationMl}
@@ -687,6 +688,31 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                     </p>
                   </div>
 
+                  {/* Attached Selections & Telemetry to Report */}
+                  <div className="space-y-1 pt-1">
+                    <span className="text-[11px] font-bold text-[#7C7C6D] uppercase">
+                      Attached Daily Telemetry &amp; Selections in Report:
+                    </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                      <div className="bg-[#FAF9F6] p-2 rounded-xl border border-[#E6E2D3]">
+                        <span className="text-[9px] text-[#8C8C7E] font-bold uppercase block">Breakfast</span>
+                        <strong className="text-[#5A5A40]">{meals.breakfast}</strong>
+                      </div>
+                      <div className="bg-[#FAF9F6] p-2 rounded-xl border border-[#E6E2D3]">
+                        <span className="text-[9px] text-[#8C8C7E] font-bold uppercase block">Lunch</span>
+                        <strong className="text-[#5A5A40]">{meals.lunch}</strong>
+                      </div>
+                      <div className="bg-[#FAF9F6] p-2 rounded-xl border border-[#E6E2D3]">
+                        <span className="text-[9px] text-[#8C8C7E] font-bold uppercase block">Dinner</span>
+                        <strong className="text-[#5A5A40]">{meals.dinner}</strong>
+                      </div>
+                      <div className="bg-[#FAF9F6] p-2 rounded-xl border border-[#E6E2D3]">
+                        <span className="text-[9px] text-[#8C8C7E] font-bold uppercase block">Hydration</span>
+                        <strong className="text-[#889E81]">{meals.hydrationMl} ml</strong>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Key Highlights */}
                   <div>
                     <span className="text-[11px] font-bold text-[#7C7C6D] uppercase block mb-1">
@@ -780,7 +806,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                   <div className="flex flex-wrap gap-2 text-[11px] text-[#7C7C6D] pt-1">
                     <span>Mood: <strong className="text-[#5A5A40] capitalize">{log.mood}</strong></span>
                     <span>&bull;</span>
-                    <span>Breakfast: <strong className="text-[#5A5A40]">{log.meals.breakfast}</strong></span>
+                    <span>Meals: <strong className="text-[#5A5A40]">B: {log.meals.breakfast} • L: {log.meals.lunch} • D: {log.meals.dinner}</strong></span>
                     <span>&bull;</span>
                     <span>Hydration: <strong className="text-[#5A5A40]">{log.meals.hydrationMl}ml</strong></span>
                     <span>&bull;</span>

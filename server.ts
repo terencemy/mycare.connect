@@ -384,7 +384,7 @@ Resident Information:
 
 Telemetry & Checkbox Data:
 - Mood: ${mood}
-- Meals: Breakfast: ${meals?.breakfast || '100%'}, Lunch: ${meals?.lunch || '100%'}, Dinner: ${meals?.dinner || 'N/A'}, Hydration: ${meals?.hydrationMl || 1200}ml
+- Meals: Breakfast: ${meals?.breakfast || 'N/A'}, Lunch: ${meals?.lunch || 'N/A'}, Dinner: ${meals?.dinner || 'N/A'}, Hydration: ${meals?.hydrationMl || 800}ml
 - Activities Participated: ${activities && activities.length ? activities.join(', ') : 'Relaxing social lounge time'}
 - Vitals: BP: ${vitals?.bloodPressure || 'Normal'}, Pulse: ${vitals?.pulseRate || '72'} bpm, Temp: ${vitals?.temperature || '36.6'}°C, SpO2: ${vitals?.spo2 || '98'}%
 - Nurse's Quick Note / Media Description: ${rawCaregiverNotes || mediaDescription || 'Resident was in great spirits today, interacting warmly with staff and peers.'}
@@ -450,12 +450,12 @@ Generate a beautiful, personalized, warm family update and clinical summary now.
         const preferred = resident.preferredName || residentFullName;
         const moodDesc = mood === 'cheerful' ? 'radiant and smiling' : mood === 'peaceful' ? 'calm and relaxed' : 'comfortable and content';
         const fallbackResult = {
-          familyWarmUpdate: `${preferred} had a wonderful, peaceful day in Room ${roomNumber}! ${preferred} was ${moodDesc} throughout the shift and thoroughly enjoyed participating in ${activities?.[0] || 'morning social activities'}. Meal intake was stellar with ${meals?.breakfast || '100%'} breakfast finished, and ${preferred} stayed nicely hydrated (${meals?.hydrationMl || 1200}ml). The care team spent quality time chatting and ensuring ${preferred}'s complete comfort.`,
-          clinicalStaffLog: `Vitals stable: BP ${vitals?.bloodPressure || '120/80'}, Pulse ${vitals?.pulseRate || 72}bpm, Temp ${vitals?.temperature || 36.6}°C, SpO2 ${vitals?.spo2 || 98}%. Meal consumption good. Active participation in ${activities?.join(', ') || 'recreational activities'}. No distress noted.`,
+          familyWarmUpdate: `${preferred} had a wonderful, peaceful day in Room ${roomNumber}! ${preferred} was ${moodDesc} throughout the shift and thoroughly enjoyed participating in ${activities?.[0] || 'daily activities'}. Meal intake (Breakfast: ${meals?.breakfast || 'N/A'}, Lunch: ${meals?.lunch || 'N/A'}, Dinner: ${meals?.dinner || 'N/A'}), and ${preferred} stayed nicely hydrated (${meals?.hydrationMl || 800}ml). The care team spent quality time chatting and ensuring complete comfort.`,
+          clinicalStaffLog: `Vitals stable: BP ${vitals?.bloodPressure || '120/80'}, Pulse ${vitals?.pulseRate || 72}bpm, Temp ${vitals?.temperature || 36.6}°C, SpO2 ${vitals?.spo2 || 98}%. Meal intake: B:${meals?.breakfast || 'N/A'} / L:${meals?.lunch || 'N/A'} / D:${meals?.dinner || 'N/A'} / Fluids:${meals?.hydrationMl || 800}ml. Active participation in ${activities?.join(', ') || 'recreational activities'}. No distress noted.`,
           keyHighlights: [
             `Mood: ${mood.toUpperCase()} and engaged`,
-            `Intake: ${meals?.breakfast || '100%'} breakfast & good hydration`,
-            `Participated in: ${activities?.join(', ') || 'Social lounge'}`,
+            `Intake: B:${meals?.breakfast || 'N/A'} • L:${meals?.lunch || 'N/A'} • D:${meals?.dinner || 'N/A'} (${meals?.hydrationMl || 800}ml fluids)`,
+            `Participated in: ${activities?.join(', ') || 'Social activities'}`,
             `Vitals: Stable and comfortable`,
           ],
           reassuranceScore: 98,

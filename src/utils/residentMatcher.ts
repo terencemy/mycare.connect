@@ -198,6 +198,7 @@ export function getLatestVitalsForResident(
       bloodSugar: lv.bloodSugar,
       deviceType: lv.deviceType || 'Caregiver Shift Assessment',
       photoUrl: lv.vitalsPhotoUrl || latestLog.mediaUrl,
+      secondaryPhotoUrl: lv.secondaryVitalsPhotoUrl,
       caregiverName: latestLog.caregiverName || resident.assignedCaregiverName || 'Care Staff',
       formattedTime: logDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
       formattedDate: logDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),

@@ -390,26 +390,32 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
                 </div>
 
                 {/* Telemetry Stats Pills */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 pt-1 text-xs">
                   <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
                     <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
                       Breakfast
                     </span>
-                    <span className="font-bold text-[#5A5A40]">{log.meals?.breakfast || '100%'}</span>
+                    <span className="font-bold text-[#5A5A40]">{log.meals?.breakfast || 'N/A'}</span>
                   </div>
                   <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
                     <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
                       Lunch
                     </span>
-                    <span className="font-bold text-[#5A5A40]">{log.meals?.lunch || '100%'}</span>
+                    <span className="font-bold text-[#5A5A40]">{log.meals?.lunch || 'N/A'}</span>
+                  </div>
+                  <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
+                    <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
+                      Dinner
+                    </span>
+                    <span className="font-bold text-[#5A5A40]">{log.meals?.dinner || 'N/A'}</span>
                   </div>
                   <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
                     <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
                       Hydration
                     </span>
-                    <span className="font-bold text-[#889E81]">{log.meals?.hydrationMl || 1200} ml</span>
+                    <span className="font-bold text-[#889E81]">{log.meals?.hydrationMl || 800} ml</span>
                   </div>
-                  <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
+                  <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3] col-span-2 sm:col-span-1">
                     <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
                       Vitals (BP &amp; Pulse)
                     </span>

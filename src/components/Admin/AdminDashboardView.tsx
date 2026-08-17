@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase, SUPABASE_URL, syncAllResidentsToSupabase } from '../../lib/supabaseClient';
-import { isResidentMatch } from '../../utils/residentMatcher';
+import { isResidentMatch, getLatestVitalsForResident } from '../../utils/residentMatcher';
 import {
   Resident,
   CareLog,
@@ -64,7 +64,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   onUpdateResident,
   onDeleteResident,
 }) => {
-  const [activeTab, setActiveTab] = useState<'triage' | 'vitals_audit' | 'residents' | 'analytics' | 'supabase_schema'>('triage');
+  const [activeTab, setActiveTab] = useState<'triage' | 'care_logs' | 'vitals_audit' | 'residents' | 'analytics' | 'supabase_schema'>('triage');
+  const [careLogSearch, setCareLogSearch] = useState('');
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<string | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<FamilyMessage | null>(
     familyMessages.find((m) => m.status === 'intercepted_pending_admin') || familyMessages[0] || null
@@ -503,6 +504,19 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
         </button>
 
         <button
+          id="admin-tab-care-logs"
+          onClick={() => setActiveTab('care_logs')}
+          className={`pb-3 px-4 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors cursor-pointer shrink-0 ${
+            activeTab === 'care_logs'
+              ? 'border-[#889E81] text-[#5A5A40]'
+              : 'border-transparent text-[#7C7C6D] hover:text-[#4A4A40]'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-[#889E81]" />
+          <span>Caregiver Updates &amp; Media ({careLogs.length})</span>
+        </button>
+
+        <button
           id="admin-tab-vitals-audit"
           onClick={() => setActiveTab('vitals_audit')}
           className={`pb-3 px-4 text-sm font-semibold border-b-2 flex items-center space-x-2 transition-colors cursor-pointer shrink-0 ${
@@ -545,6 +559,255 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
         </button>
       </div>
 
+      {/* TAB: CAREGIVER UPDATES & MEDIA FEED */}
+      {activeTab === 'care_logs' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-[24px] p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center space-x-2 mb-1">
+                <Sparkles className="w-5 h-5 text-[#889E81]" />
+                <h3 className="text-base font-serif font-bold text-[#5A5A40]">
+                  Caregiver Shift Updates &amp; Photo Audit Feed
+                </h3>
+              </div>
+              <p className="text-xs text-[#7C7C6D]">
+                Review all caregiver shift updates, activity photos, dual vitals watermarks, meal telemetry, and AI synthesized family reports in real time.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2 w-full sm:w-auto">
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 text-[#8C8C7E] absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search resident, room..."
+                  value={careLogSearch}
+                  onChange={(e) => setCareLogSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-[#E6E2D3] rounded-xl text-xs text-[#5A5A40] placeholder-[#8C8C7E] focus:outline-hidden focus:border-[#889E81]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {careLogs.length === 0 ? (
+            <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-12 text-center space-y-3">
+              <Sparkles className="w-10 h-10 text-[#8C8C7E] mx-auto opacity-50" />
+              <h4 className="text-sm font-bold text-[#5A5A40]">No Caregiver Updates Logged Yet</h4>
+              <p className="text-xs text-[#7C7C6D] max-w-md mx-auto">
+                When care staff record shift updates in the Caregiver module, all media photos, meal logs, and vitals will appear here in chronological order.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {careLogs
+                .filter((log) => {
+                  if (!careLogSearch) return true;
+                  const q = careLogSearch.toLowerCase();
+                  return (
+                    (log.residentFullName && log.residentFullName.toLowerCase().includes(q)) ||
+                    (log.roomNumber && log.roomNumber.toLowerCase().includes(q)) ||
+                    (log.bedNumber && log.bedNumber.toLowerCase().includes(q)) ||
+                    (log.caregiverName && log.caregiverName.toLowerCase().includes(q))
+                  );
+                })
+                .map((log) => {
+                  const hasActivityPhoto = !!log.mediaUrl;
+                  const hasVitalsPhoto1 = !!log.vitals?.vitalsPhotoUrl;
+                  const hasVitalsPhoto2 = !!log.vitals?.secondaryVitalsPhotoUrl;
+                  const totalPhotos = [hasActivityPhoto, hasVitalsPhoto1, hasVitalsPhoto2].filter(Boolean).length;
+
+                  return (
+                    <div
+                      key={log.id}
+                      className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-2xs space-y-4 hover:border-[#889E81]/60 transition-all"
+                    >
+                      {/* Header: Resident & Caregiver Info */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E6E2D3] pb-3">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 rounded-2xl bg-[#EBF1EA] text-[#5A5A40] font-bold text-xs flex items-center justify-center ring-1 ring-[#889E81]/30">
+                            {log.roomNumber || 'RM'}
+                          </div>
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              <h4 className="text-sm font-bold text-[#5A5A40]">{log.residentFullName}</h4>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#F0ECE2] text-[#5A5A40] border border-[#E6E2D3]">
+                                Bed {log.bedNumber}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-[#7C7C6D]">
+                              Logged by <strong className="text-[#5A5A40]">{log.caregiverName}</strong> &bull;{' '}
+                              {new Date(log.timestamp).toLocaleString([], {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center space-x-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Caregiver Published</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Photo Updates Gallery */}
+                      <div>
+                        <div className="text-[10px] font-bold text-[#8C8C7E] uppercase tracking-wider mb-2 flex items-center space-x-1.5">
+                          <span>Attached Photos &amp; Watermarks</span>
+                          <span className="text-[#889E81] font-semibold">
+                            ({totalPhotos} photo{totalPhotos !== 1 ? 's' : ''})
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          {/* Activity / Care Photo */}
+                          {hasActivityPhoto ? (
+                            <div
+                              onClick={() => setSelectedPreviewImage(log.mediaUrl!)}
+                              className="relative group rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer shadow-xs aspect-video sm:aspect-4/3"
+                            >
+                              <img
+                                src={log.mediaUrl}
+                                alt="Activity Media"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                              />
+                              <div className="absolute inset-0 bg-black/35 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <ZoomIn className="w-5 h-5 text-white" />
+                              </div>
+                              <div className="absolute top-2 left-2 bg-black/75 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded-full border border-white/20">
+                                Activity / Care Photo
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {/* Monitor 1 Vitals Photo */}
+                          {hasVitalsPhoto1 ? (
+                            <div
+                              onClick={() => setSelectedPreviewImage(log.vitals!.vitalsPhotoUrl!)}
+                              className="relative group rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer shadow-xs aspect-video sm:aspect-4/3"
+                            >
+                              <img
+                                src={log.vitals!.vitalsPhotoUrl}
+                                alt="Monitor 1 Vitals Watermark"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                              />
+                              <div className="absolute inset-0 bg-black/35 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <ZoomIn className="w-5 h-5 text-white" />
+                              </div>
+                              <div className="absolute top-2 left-2 bg-black/75 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded-full border border-white/20">
+                                Monitor 1 Watermark
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {/* Monitor 2 Vitals Photo */}
+                          {hasVitalsPhoto2 ? (
+                            <div
+                              onClick={() => setSelectedPreviewImage(log.vitals!.secondaryVitalsPhotoUrl!)}
+                              className="relative group rounded-2xl overflow-hidden border border-[#889E81]/50 bg-[#2C332A] cursor-pointer shadow-xs aspect-video sm:aspect-4/3"
+                            >
+                              <img
+                                src={log.vitals!.secondaryVitalsPhotoUrl}
+                                alt="Monitor 2 Vitals Watermark"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                              />
+                              <div className="absolute inset-0 bg-black/35 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <ZoomIn className="w-5 h-5 text-white" />
+                              </div>
+                              <div className="absolute top-2 left-2 bg-emerald-950/85 backdrop-blur-xs text-emerald-300 text-[9px] font-bold px-2 py-0.5 rounded-full border border-emerald-400/30">
+                                Monitor 2 Watermark
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {!hasActivityPhoto && !hasVitalsPhoto1 && !hasVitalsPhoto2 && (
+                            <div className="col-span-full py-4 text-center text-xs text-[#8C8C7E] bg-[#FAF9F6] rounded-xl border border-[#E6E2D3] italic">
+                              No photos attached to this update
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Telemetry Grid: Meals & Vitals */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div className="bg-[#FAF9F6] p-3 rounded-xl border border-[#E6E2D3] text-xs">
+                          <span className="text-[9px] uppercase font-bold text-[#8C8C7E] block mb-1">Meals &amp; Nutrition</span>
+                          <div className="space-y-0.5 font-medium text-[#5A5A40]">
+                            <div>Breakfast: <strong>{log.meals?.breakfast || 'N/A'}</strong></div>
+                            <div>Lunch: <strong>{log.meals?.lunch || 'N/A'}</strong></div>
+                            <div>Dinner: <strong>{log.meals?.dinner || 'N/A'}</strong></div>
+                          </div>
+                        </div>
+
+                        <div className="bg-[#FAF9F6] p-3 rounded-xl border border-[#E6E2D3] text-xs">
+                          <span className="text-[9px] uppercase font-bold text-[#8C8C7E] block mb-1">Hydration Level</span>
+                          <div className="text-sm font-bold text-[#5A5A40]">
+                            {log.meals?.hydrationMl || 800} ml
+                          </div>
+                          <span className="text-[10px] text-[#7C7C6D]">Daily target intake tracked</span>
+                        </div>
+
+                        <div className="bg-[#FAF9F6] p-3 rounded-xl border border-[#E6E2D3] text-xs">
+                          <span className="text-[9px] uppercase font-bold text-[#8C8C7E] block mb-1">Vitals Reading</span>
+                          <div className="grid grid-cols-2 gap-1 font-bold text-[#5A5A40] text-[11px]">
+                            <div>BP: {log.vitals?.bloodPressure || 'N/A'}</div>
+                            <div>Pulse: {log.vitals?.pulseRate ? `${log.vitals.pulseRate} bpm` : 'N/A'}</div>
+                            <div>SpO2: {log.vitals?.spo2 ? `${log.vitals.spo2}%` : 'N/A'}</div>
+                            <div>Temp: {log.vitals?.temperature ? `${log.vitals.temperature}°C` : 'N/A'}</div>
+                          </div>
+                        </div>
+
+                        <div className="bg-[#FAF9F6] p-3 rounded-xl border border-[#E6E2D3] text-xs">
+                          <span className="text-[9px] uppercase font-bold text-[#8C8C7E] block mb-1">Mood &amp; Activities</span>
+                          <div className="font-bold text-[#5A5A40] capitalize mb-1">{log.mood || 'Content'}</div>
+                          <div className="flex flex-wrap gap-1">
+                            {log.activities && log.activities.length > 0 ? (
+                              log.activities.map((act, idx) => (
+                                <span key={idx} className="text-[9px] bg-white border border-[#E6E2D3] px-1.5 py-0.5 rounded-md text-[#5A5A40]">
+                                  {act}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-[10px] text-[#8C8C7E]">Routine resting</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* AI Reports: Family Narrative & Clinical EHR Note */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-[#E6E2D3]">
+                        <div className="bg-[#F7F5F0] p-3.5 rounded-2xl border border-[#E6E2D3] space-y-1">
+                          <div className="flex items-center space-x-1.5 text-xs font-bold text-[#5A5A40]">
+                            <Sparkles className="w-3.5 h-3.5 text-[#889E81]" />
+                            <span>Family Warm Narrative (AI Generated)</span>
+                          </div>
+                          <p className="text-xs text-[#5A5A40] leading-relaxed">
+                            {log.familyWarmUpdate || 'Routine care provided with positive mood and comfort.'}
+                          </p>
+                        </div>
+
+                        <div className="bg-[#F0ECE2]/60 p-3.5 rounded-2xl border border-[#E6E2D3] space-y-1">
+                          <div className="flex items-center space-x-1.5 text-xs font-bold text-[#5A5A40]">
+                            <ShieldCheck className="w-3.5 h-3.5 text-[#889E81]" />
+                            <span>Internal Clinical Staff EHR Log</span>
+                          </div>
+                          <p className="text-xs font-mono text-[#5A5A40] leading-relaxed">
+                            {log.clinicalStaffLog || 'Shift vitals recorded and verified.'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TAB: DAILY VITALS AUDIT & WATERMARKS */}
       {activeTab === 'vitals_audit' && (
         <div className="space-y-6 animate-in fade-in duration-200">
@@ -582,13 +845,25 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 Daily Vitals &amp; Watermark Registry
               </span>
               <span className="text-xs text-[#7C7C6D]">
-                Updated Today &bull; Real-time OCR &amp; Verification
+                Updated Today &bull; Real-time OCR &amp; Verification (Dual Photo Supported)
               </span>
             </div>
 
             <div className="divide-y divide-[#E6E2D3]">
               {residents.map((res) => {
-                const record = morningVitals.find((v) => isResidentMatch(res, v));
+                const morningRecord = morningVitals.find((v) => isResidentMatch(res, v));
+                const latestVitals = getLatestVitalsForResident(res, morningVitals, careLogs);
+
+                const bp = morningRecord?.readings.bloodPressure || latestVitals?.bloodPressure;
+                const pulse = morningRecord?.readings.pulseRate || latestVitals?.pulseRate;
+                const spo2 = morningRecord?.readings.spo2 || latestVitals?.spo2;
+                const temp = morningRecord?.readings.temperature || latestVitals?.temperature;
+                const hasVitals = !!(bp || pulse || spo2 || temp);
+
+                const primaryPhoto = morningRecord?.vitalsPhotoUrl || latestVitals?.photoUrl;
+                const secondaryPhoto = morningRecord?.secondaryVitalsPhotoUrl || latestVitals?.secondaryPhotoUrl;
+                const formattedTime = morningRecord?.formattedTime || latestVitals?.formattedTime || 'Today';
+                const caregiverName = morningRecord?.caregiverName || latestVitals?.caregiverName || 'Care Staff';
 
                 return (
                   <div key={res.id} className="p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-[#FAF9F6]/60 transition-colors">
@@ -603,23 +878,23 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                     </div>
 
                     {/* Vitals Telemetry Values */}
-                    {record ? (
+                    {hasVitals ? (
                       <div className="grid grid-cols-4 gap-3 text-xs bg-[#F7F5F0] p-2.5 rounded-2xl border border-[#E6E2D3] min-w-[320px]">
                         <div>
                           <span className="text-[9px] text-[#8C8C7E] block uppercase font-bold">BP</span>
-                          <span className="font-bold text-[#5A5A40]">{record.readings.bloodPressure || 'N/A'}</span>
+                          <span className="font-bold text-[#5A5A40]">{bp || 'N/A'}</span>
                         </div>
                         <div>
                           <span className="text-[9px] text-[#8C8C7E] block uppercase font-bold">Pulse</span>
-                          <span className="font-bold text-[#5A5A40]">{record.readings.pulseRate || 'N/A'} bpm</span>
+                          <span className="font-bold text-[#5A5A40]">{pulse ? `${pulse} bpm` : 'N/A'}</span>
                         </div>
                         <div>
                           <span className="text-[9px] text-[#8C8C7E] block uppercase font-bold">SpO2</span>
-                          <span className="font-bold text-[#5A5A40]">{record.readings.spo2 || 'N/A'}%</span>
+                          <span className="font-bold text-[#5A5A40]">{spo2 ? `${spo2}%` : 'N/A'}</span>
                         </div>
                         <div>
                           <span className="text-[9px] text-[#8C8C7E] block uppercase font-bold">Temp</span>
-                          <span className="font-bold text-[#5A5A40]">{record.readings.temperature || 'N/A'}°C</span>
+                          <span className="font-bold text-[#5A5A40]">{temp ? `${temp}°C` : 'N/A'}</span>
                         </div>
                       </div>
                     ) : (
@@ -628,32 +903,60 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                       </div>
                     )}
 
-                    {/* Watermarked photo & status */}
+                    {/* Watermarked photos (Dual & Single Photo Support) & status */}
                     <div className="flex items-center space-x-3 shrink-0">
-                      {record?.vitalsPhotoUrl ? (
-                        <div
-                          onClick={() => setSelectedPreviewImage(record.vitalsPhotoUrl)}
-                          className="relative group w-16 h-12 rounded-xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer shadow-xs"
-                        >
-                          <img
-                            src={record.vitalsPhotoUrl}
-                            alt="Watermarked Vitals"
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
-                          />
-                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <ZoomIn className="w-4 h-4 text-white" />
+                      <div className="flex items-center space-x-2">
+                        {primaryPhoto ? (
+                          <div
+                            onClick={() => setSelectedPreviewImage(primaryPhoto)}
+                            className="relative group w-14 h-12 rounded-xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer shadow-2xs hover:ring-2 hover:ring-[#889E81] transition-all"
+                            title="Monitor 1 / Primary Vitals Reading"
+                          >
+                            <img
+                              src={primaryPhoto}
+                              alt="Monitor 1 Vitals Reading"
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
+                            />
+                            <div className="absolute inset-0 bg-black/35 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <ZoomIn className="w-4 h-4 text-white" />
+                            </div>
+                            {secondaryPhoto ? (
+                              <div className="absolute top-0.5 left-0.5 bg-black/80 backdrop-blur-xs text-white text-[8px] font-bold px-1 py-0.2 rounded-xs border border-white/20">
+                                Mon 1
+                              </div>
+                            ) : null}
                           </div>
-                        </div>
-                      ) : null}
+                        ) : null}
+
+                        {secondaryPhoto ? (
+                          <div
+                            onClick={() => setSelectedPreviewImage(secondaryPhoto)}
+                            className="relative group w-14 h-12 rounded-xl overflow-hidden border border-[#889E81]/40 bg-[#2C332A] cursor-pointer shadow-2xs hover:ring-2 hover:ring-[#889E81] transition-all"
+                            title="Monitor 2 / Secondary Vitals Reading"
+                          >
+                            <img
+                              src={secondaryPhoto}
+                              alt="Monitor 2 Vitals Reading"
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-200"
+                            />
+                            <div className="absolute inset-0 bg-black/35 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <ZoomIn className="w-4 h-4 text-white" />
+                            </div>
+                            <div className="absolute top-0.5 left-0.5 bg-emerald-950/85 backdrop-blur-xs text-emerald-300 text-[8px] font-bold px-1 py-0.2 rounded-xs border border-emerald-400/30">
+                              Mon 2
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
 
                       <div className="text-right">
-                        {record ? (
+                        {hasVitals ? (
                           <>
-                            <div className="flex items-center space-x-1 text-[11px] font-bold text-[#889E81]">
+                            <div className="flex items-center justify-end space-x-1 text-[11px] font-bold text-[#889E81]">
                               <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>{record.formattedTime}</span>
+                              <span>{secondaryPhoto ? '✓ 2 Photos' : '✓ 1 Photo'}</span>
                             </div>
-                            <span className="text-[10px] text-[#8C8C7E] block">By {record.caregiverName}</span>
+                            <span className="text-[10px] text-[#8C8C7E] block">{formattedTime} &bull; {caregiverName}</span>
                           </>
                         ) : (
                           <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
