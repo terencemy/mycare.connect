@@ -128,20 +128,20 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
       {/* Resident Switcher & Header Card */}
       <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center space-x-4">
-            <img
-              src={activeResident?.photoUrl}
-              alt={activeResident?.fullName}
-              className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#889E81]/30 shadow-xs"
-            />
+          <div className="flex items-center space-x-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-[#EBF1EA] text-[#5A5A40] flex items-center justify-center font-serif font-bold text-lg border border-[#889E81]/30 shrink-0 shadow-2xs">
+              {activeResident?.fullName ? activeResident.fullName.charAt(0) : 'R'}
+            </div>
             <div>
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-xl font-serif font-bold text-[#5A5A40]">
                   {activeResident?.fullName}
                 </h1>
-                <span className="text-xs font-semibold text-[#7C7C6D]">
-                  (&ldquo;{activeResident?.preferredName}&rdquo;)
-                </span>
+                {activeResident?.preferredName && (
+                  <span className="text-xs font-semibold text-[#7C7C6D]">
+                    (&ldquo;{activeResident.preferredName}&rdquo;)
+                  </span>
+                )}
                 <span className="bg-[#EBF1EA] text-[#5A5A40] text-xs font-extrabold px-2.5 py-0.5 rounded-full border border-[#889E81]/30">
                   Room {activeResident?.roomNumber}, {activeResident?.bedNumber}
                 </span>
@@ -180,7 +180,7 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
         </div>
       </div>
 
-      {/* iPad / Tablet Quick Morning Vitals Banner (Visible on md & above for immediate glance, and responsive for mobile) */}
+      {/* iPad / Tablet Quick Daily Vitals Banner (Visible on md & above for immediate glance, and responsive for mobile) */}
       <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-[24px] p-4.5 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E6E2D3]">
           <div className="flex items-center space-x-2.5">
@@ -189,7 +189,7 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
             </div>
             <div>
               <h2 className="text-xs font-bold uppercase tracking-wider text-[#5A5A40] flex items-center space-x-1.5">
-                <span>Morning Clinical Vital Signs (Pre-07:00 AM)</span>
+                <span>Daily Clinical Vital Signs</span>
               </h2>
               <p className="text-[11px] text-[#7C7C6D]">
                 {activeVitals ? (
@@ -197,7 +197,7 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
                     Audited by <strong className="text-[#5A5A40]">{activeVitals.caregiverName}</strong> on {activeVitals.formattedDate} at {activeVitals.formattedTime}
                   </>
                 ) : (
-                  'Daily clinical round conducted every morning before 07:00 AM'
+                  'Daily clinical round conducted by nursing staff'
                 )}
               </p>
             </div>
@@ -211,7 +211,17 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
                 className="text-[11px] font-bold bg-white text-[#5A5A40] hover:text-[#889E81] px-3 py-1.5 rounded-full border border-[#E6E2D3] flex items-center space-x-1.5 shadow-2xs transition-colors cursor-pointer"
               >
                 <ZoomIn className="w-3.5 h-3.5 text-[#889E81]" />
-                <span>View Watermark Photo</span>
+                <span>{activeVitals.secondaryPhotoUrl ? 'View Monitor 1 Photo' : 'View Watermark Photo'}</span>
+              </button>
+            )}
+            {activeVitals?.secondaryPhotoUrl && (
+              <button
+                type="button"
+                onClick={() => setSelectedPreviewImage(activeVitals.secondaryPhotoUrl!)}
+                className="text-[11px] font-bold bg-white text-[#5A5A40] hover:text-[#889E81] px-3 py-1.5 rounded-full border border-[#E6E2D3] flex items-center space-x-1.5 shadow-2xs transition-colors cursor-pointer"
+              >
+                <ZoomIn className="w-3.5 h-3.5 text-[#889E81]" />
+                <span>View Monitor 2 Photo</span>
               </button>
             )}
             {activeVitals ? (
@@ -221,14 +231,14 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
               </span>
             ) : (
               <span className="text-[11px] font-semibold text-[#8C8C7E] bg-white px-3 py-1 rounded-full border border-[#E6E2D3]">
-                Pending 7 AM Round
+                Pending Daily Round
               </span>
             )}
           </div>
         </div>
 
         {/* Vitals Key Metrics Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5 pt-3">
+        <div className={`grid grid-cols-2 sm:grid-cols-4 ${activeVitals?.bloodSugar !== undefined ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-2.5 pt-3`}>
           <div className="bg-white p-3 rounded-2xl border border-[#E6E2D3] shadow-2xs">
             <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold tracking-wider">
               Blood Pressure
@@ -281,7 +291,7 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
             </span>
           </div>
 
-          {activeVitals?.bloodSugar !== undefined ? (
+          {activeVitals?.bloodSugar !== undefined && (
             <div className="bg-white p-3 rounded-2xl border border-[#E6E2D3] shadow-2xs col-span-2 sm:col-span-4 lg:col-span-1">
               <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold tracking-wider">
                 Fasting Sugar
@@ -292,18 +302,6 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
               </div>
               <span className="text-[10px] text-[#889E81] font-semibold block mt-0.5">
                 Target Range
-              </span>
-            </div>
-          ) : (
-            <div className="bg-white p-3 rounded-2xl border border-[#E6E2D3] shadow-2xs col-span-2 sm:col-span-4 lg:col-span-1 flex flex-col justify-between">
-              <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold tracking-wider">
-                Device Protocol
-              </span>
-              <div className="text-xs font-bold text-[#5A5A40] truncate mt-0.5">
-                {activeVitals?.deviceType || 'Digital Monitor'}
-              </div>
-              <span className="text-[10px] text-[#889E81] font-semibold block">
-                Pre-07:00 AM Round
               </span>
             </div>
           )}
@@ -463,12 +461,12 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
 
         {/* Right Column: Resident Medical Profile & Intercepted Message Status (4 cols on lg / 5 cols on md iPad) */}
         <div className="md:col-span-5 lg:col-span-4 space-y-6">
-          {/* Pre-7 AM Verified Morning Vitals Card */}
+          {/* Daily Verified Vital Signs Card */}
           <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#5A5A40] flex items-center space-x-1.5">
                 <Clock className="w-4 h-4 text-[#889E81]" />
-                <span>Morning Vitals (Pre-7 AM)</span>
+                <span>Daily Vital Signs</span>
               </h3>
               {activeVitals ? (
                 <span className="text-[10px] font-bold text-[#889E81] bg-[#EBF1EA] px-2 py-0.5 rounded-full border border-[#889E81]/30 flex items-center space-x-1">
@@ -477,35 +475,81 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
                 </span>
               ) : (
                 <span className="text-[10px] font-semibold text-[#8C8C7E] bg-[#FAF9F6] px-2 py-0.5 rounded-full border border-[#E6E2D3]">
-                  Pending 7 AM Round
+                  Pending Daily Round
                 </span>
               )}
             </div>
 
             {activeVitals ? (
               <div className="space-y-3 pt-1">
-                {/* Watermarked photo thumbnail */}
+                {/* Watermarked photo thumbnail(s) */}
                 {activeVitals.photoUrl && (
-                  <div
-                    onClick={() => setSelectedPreviewImage(activeVitals.photoUrl!)}
-                    className="relative group rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer"
-                  >
-                    <img
-                      src={activeVitals.photoUrl}
-                      alt="Watermarked Vital Sign Reading"
-                      className="w-full h-36 object-cover group-hover:scale-102 transition-transform duration-300"
-                    />
-                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <span className="text-white text-xs font-bold bg-black/60 px-3 py-1.5 rounded-full flex items-center space-x-1.5 backdrop-blur-xs">
-                        <ZoomIn className="w-3.5 h-3.5" />
-                        <span>View Verified Watermark</span>
-                      </span>
+                  activeVitals.secondaryPhotoUrl ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div
+                        onClick={() => setSelectedPreviewImage(activeVitals.photoUrl!)}
+                        className="relative group rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer aspect-4/3"
+                      >
+                        <img
+                          src={activeVitals.photoUrl}
+                          alt="Monitor 1"
+                          className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
+                        />
+                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="text-white text-[10px] font-bold bg-black/60 px-2 py-1 rounded-full flex items-center space-x-1 backdrop-blur-xs">
+                            <ZoomIn className="w-3 h-3" />
+                            <span>Monitor 1</span>
+                          </span>
+                        </div>
+                        <div className="absolute bottom-1 left-1 right-1 bg-black/75 backdrop-blur-xs text-white text-[8px] font-mono px-1.5 py-0.5 rounded flex items-center justify-between">
+                          <span>Monitor 1</span>
+                          <span className="text-emerald-400 font-bold">{activeVitals.formattedTime}</span>
+                        </div>
+                      </div>
+
+                      <div
+                        onClick={() => setSelectedPreviewImage(activeVitals.secondaryPhotoUrl!)}
+                        className="relative group rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer aspect-4/3"
+                      >
+                        <img
+                          src={activeVitals.secondaryPhotoUrl}
+                          alt="Monitor 2"
+                          className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
+                        />
+                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="text-white text-[10px] font-bold bg-black/60 px-2 py-1 rounded-full flex items-center space-x-1 backdrop-blur-xs">
+                            <ZoomIn className="w-3 h-3" />
+                            <span>Monitor 2</span>
+                          </span>
+                        </div>
+                        <div className="absolute bottom-1 left-1 right-1 bg-black/75 backdrop-blur-xs text-white text-[8px] font-mono px-1.5 py-0.5 rounded flex items-center justify-between">
+                          <span>Monitor 2</span>
+                          <span className="text-emerald-300 font-bold">2nd Photo</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="absolute bottom-2 left-2 right-2 bg-black/75 backdrop-blur-xs text-white text-[9px] font-mono px-2 py-1 rounded-lg flex items-center justify-between">
-                      <span className="truncate">Timestamp Watermarked</span>
-                      <span className="text-emerald-400 font-bold">{activeVitals.formattedTime}</span>
+                  ) : (
+                    <div
+                      onClick={() => setSelectedPreviewImage(activeVitals.photoUrl!)}
+                      className="relative group rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer"
+                    >
+                      <img
+                        src={activeVitals.photoUrl}
+                        alt="Watermarked Vital Sign Reading"
+                        className="w-full h-36 object-cover group-hover:scale-102 transition-transform duration-300"
+                      />
+                      <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="text-white text-xs font-bold bg-black/60 px-3 py-1.5 rounded-full flex items-center space-x-1.5 backdrop-blur-xs">
+                          <ZoomIn className="w-3.5 h-3.5" />
+                          <span>View Verified Watermark</span>
+                        </span>
+                      </div>
+                      <div className="absolute bottom-2 left-2 right-2 bg-black/75 backdrop-blur-xs text-white text-[9px] font-mono px-2 py-1 rounded-lg flex items-center justify-between">
+                        <span className="truncate">Timestamp Watermarked</span>
+                        <span className="text-emerald-400 font-bold">{activeVitals.formattedTime}</span>
+                      </div>
                     </div>
-                  </div>
+                  )
                 )}
 
                 {/* Vitals metrics */}
@@ -541,7 +585,7 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
               </div>
             ) : (
               <p className="text-xs text-[#7C7C6D] py-2">
-                Morning clinical vital signs round is conducted daily before 07:00 AM. Watermarked photo confirmation will appear here once submitted by nursing staff.
+                Daily clinical vital signs round is conducted daily. Watermarked photo confirmation will appear here once submitted by nursing staff.
               </p>
             )}
           </div>
@@ -788,7 +832,7 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
             </div>
             <div className="p-3 bg-black/60 text-white/80 text-xs flex items-center justify-between border-t border-white/10">
               <span>Date &amp; Time Watermark rendered directly into pixel data via HTML5 Canvas</span>
-              <span className="text-emerald-400 font-mono font-semibold">Pre-07:00 AM Protocol</span>
+              <span className="text-emerald-400 font-mono font-semibold">Daily Clinical Vitals</span>
             </div>
           </div>
         </div>

@@ -512,7 +512,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
           }`}
         >
           <Clock className="w-4 h-4 text-[#889E81]" />
-          <span>Pre-7 AM Vitals Audit &amp; Watermarks</span>
+          <span>Daily Vitals Audit &amp; Watermarks</span>
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EBF1EA] text-[#5A5A40] border border-[#889E81]/30">
             {morningVitals.length}/{residents.length} Completed
           </span>
@@ -545,7 +545,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
         </button>
       </div>
 
-      {/* TAB: PRE-7 AM VITALS AUDIT & WATERMARKS */}
+      {/* TAB: DAILY VITALS AUDIT & WATERMARKS */}
       {activeTab === 'vitals_audit' && (
         <div className="space-y-6 animate-in fade-in duration-200">
           <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-[24px] p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -553,11 +553,11 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
               <div className="flex items-center space-x-2 mb-1">
                 <ShieldCheck className="w-5 h-5 text-[#889E81]" />
                 <h3 className="text-base font-serif font-bold text-[#5A5A40]">
-                  Pre-07:00 AM Clinical Vital Sign Protocol Compliance
+                  Daily Clinical Vital Signs Protocol Compliance
                 </h3>
               </div>
               <p className="text-xs text-[#7C7C6D]">
-                Every morning prior to 07:00 AM, nursing staff captures an equipment reading with an immutable Canvas-baked watermark showing date, time, resident bed tag, and supervisor signature.
+                During daily rounds, nursing staff captures equipment readings with an immutable Canvas-baked watermark showing date, time, resident bed tag, and staff signature.
               </p>
             </div>
 
@@ -579,7 +579,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
           <div className="bg-white rounded-[24px] border border-[#E6E2D3] overflow-hidden shadow-xs">
             <div className="p-4 border-b border-[#E6E2D3] flex items-center justify-between bg-[#FAF9F6]">
               <span className="text-xs font-bold text-[#5A5A40] uppercase tracking-wider">
-                Morning Shift Vitals &amp; Watermark Registry
+                Daily Vitals &amp; Watermark Registry
               </span>
               <span className="text-xs text-[#7C7C6D]">
                 Updated Today &bull; Real-time OCR &amp; Verification
@@ -624,7 +624,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                       </div>
                     ) : (
                       <div className="text-xs text-[#8C8C7E] italic py-2">
-                        Pending morning pre-7am vital capture...
+                        Pending daily vital sign capture...
                       </div>
                     )}
 
@@ -1860,7 +1860,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
             </div>
             <div className="p-3 bg-black/60 text-white/80 text-xs flex items-center justify-between border-t border-white/10">
               <span>Canvas Direct Pixel Watermark: Date, Time &amp; Bed Tag Embedded</span>
-              <span className="text-emerald-400 font-mono font-semibold">Pre-07:00 AM Verified</span>
+              <span className="text-emerald-400 font-mono font-semibold">Daily Vitals Verified</span>
             </div>
           </div>
         </div>

@@ -248,7 +248,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
           }`}
         >
           <Clock className="w-4 h-4 text-[#889E81]" />
-          <span>Morning Vitals Round (Pre-7 AM)</span>
+          <span>Daily Vitals Round</span>
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EBF1EA] text-[#5A5A40] border border-[#889E81]/30">
             {morningVitals.length}/{residents.length} Beds
           </span>
@@ -297,6 +297,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                 spo2: record.readings.spo2 || vitals.spo2,
                 bloodSugar: record.readings.bloodSugar || vitals.bloodSugar,
                 vitalsPhotoUrl: record.vitalsPhotoUrl,
+                secondaryVitalsPhotoUrl: record.secondaryVitalsPhotoUrl,
                 vitalsRecordedAt: record.recordedAt,
                 isBefore7am: record.isBefore7am,
               });

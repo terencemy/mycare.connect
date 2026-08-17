@@ -99,6 +99,7 @@ export interface ConsolidatedVitals {
   bloodSugar?: number;
   deviceType?: string;
   photoUrl?: string;
+  secondaryPhotoUrl?: string;
   caregiverName: string;
   formattedTime: string;
   formattedDate: string;
@@ -171,6 +172,7 @@ export function getLatestVitalsForResident(
       bloodSugar: readings.bloodSugar,
       deviceType: latestMorning.deviceType || 'Digital Spot Monitor',
       photoUrl: latestMorning.vitalsPhotoUrl,
+      secondaryPhotoUrl: latestMorning.secondaryVitalsPhotoUrl,
       caregiverName: latestMorning.caregiverName || resident.assignedCaregiverName || 'Care Staff',
       formattedTime: latestMorning.formattedTime || new Date(latestMorning.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       formattedDate: latestMorning.formattedDate || new Date(latestMorning.recordedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),

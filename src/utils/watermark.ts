@@ -13,7 +13,7 @@ export interface WatermarkData {
 
 /**
  * Renders a crisp clinical watermark overlay with exact date, time, resident tag,
- * and pre-7AM verification onto any vital signs photo using HTML5 Canvas.
+ * and daily clinical verification onto any vital signs photo using HTML5 Canvas.
  */
 export async function applyVitalsWatermark(
   imageSource: string,
@@ -91,15 +91,13 @@ export async function applyVitalsWatermark(
       ctx.fillText(`CARE CONNECT • CLINICAL VITALS AUDIT`, paddingX, ribbonY + baseFontSize * 1.6);
 
       // Badge on top-right of ribbon
-      const badgeText = isPre7am
-        ? `✓ PRE-07:00 AM PROTOCOL VERIFIED`
-        : `ROUTINE VITALS AUDIT`;
+      const badgeText = `✓ DAILY CLINICAL VITALS VERIFIED`;
       ctx.font = `bold ${baseFontSize * 0.9}px sans-serif`;
       const badgeWidth = ctx.measureText(badgeText).width + 18;
       const badgeX = width - paddingX - badgeWidth;
       const badgeY = ribbonY + baseFontSize * 0.6;
 
-      ctx.fillStyle = isPre7am ? 'rgba(136, 158, 129, 0.9)' : 'rgba(180, 140, 80, 0.9)';
+      ctx.fillStyle = 'rgba(136, 158, 129, 0.9)';
       ctx.beginPath();
       if (ctx.roundRect) {
         ctx.roundRect(badgeX, badgeY, badgeWidth, baseFontSize * 1.5, 6);

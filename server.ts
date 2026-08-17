@@ -594,7 +594,7 @@ Analyze this message and return:
     res.json(msg);
   });
 
-  // Morning Vitals Records Endpoints (Pre-7 AM Protocol)
+  // Daily Vitals Records Endpoints
   app.get('/api/vitals/morning-records', (req, res) => {
     const { residentId } = req.query;
     if (residentId) {
@@ -607,7 +607,7 @@ Analyze this message and return:
     try {
       const now = new Date();
       const hours = now.getHours();
-      const isBefore7am = req.body.isBefore7am !== undefined ? req.body.isBefore7am : hours < 7;
+      const isBefore7am = req.body.isBefore7am !== undefined ? req.body.isBefore7am : true;
 
       const newRecord: MorningVitalsRecord = {
         id: `vtl_${Date.now()}`,
@@ -618,13 +618,14 @@ Analyze this message and return:
         caregiverId: req.body.caregiverId || 'user_care_1',
         caregiverName: req.body.caregiverName || 'Nurse Sarah Jenkins',
         vitalsPhotoUrl: req.body.vitalsPhotoUrl,
+        secondaryVitalsPhotoUrl: req.body.secondaryVitalsPhotoUrl || undefined,
         readings: req.body.readings || {},
         deviceType: req.body.deviceType || 'Digital Medical Device',
         recordedAt: req.body.recordedAt || now.toISOString(),
         formattedTime: req.body.formattedTime || now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
         formattedDate: req.body.formattedDate || now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         isBefore7am,
-        notes: req.body.notes || 'Routine morning vital sign check completed.',
+        notes: req.body.notes || 'Daily vital signs round completed.',
         status: req.body.status || 'normal',
         aiExtracted: req.body.aiExtracted || false,
       };

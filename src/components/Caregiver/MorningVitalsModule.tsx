@@ -65,7 +65,10 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
 
   const existingRecord = getResidentTodayRecord(selectedResident?.id || '');
 
-  // Photo state (strictly blank / pending upload when no photo exists)
+  // Active Photo Tab Slot: 'primary' (Monitor 1) or 'secondary' (Monitor 2 - Optional)
+  const [activePhotoSlot, setActivePhotoSlot] = useState<'primary' | 'secondary'>('primary');
+
+  // Photo 1 (Primary) state
   const [selectedPresetIndex, setSelectedPresetIndex] = useState<number>(-1);
   const [currentRawPhotoUrl, setCurrentRawPhotoUrl] = useState<string>(
     existingRecord?.vitalsPhotoUrl || ''
@@ -74,6 +77,16 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
     existingRecord?.vitalsPhotoUrl || ''
   );
   const [isWatermarking, setIsWatermarking] = useState(false);
+
+  // Photo 2 (Secondary / Optional) state
+  const [secondarySelectedPresetIndex, setSecondarySelectedPresetIndex] = useState<number>(-1);
+  const [secondaryRawPhotoUrl, setSecondaryRawPhotoUrl] = useState<string>(
+    existingRecord?.secondaryVitalsPhotoUrl || ''
+  );
+  const [secondaryWatermarkedPhotoUrl, setSecondaryWatermarkedPhotoUrl] = useState<string>(
+    existingRecord?.secondaryVitalsPhotoUrl || ''
+  );
+  const [isSecondaryWatermarking, setIsSecondaryWatermarking] = useState(false);
 
   // Vitals readings (strictly blank / pending upload if no photo/record)
   const [bloodPressure, setBloodPressure] = useState<string>(
@@ -113,6 +126,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const secondaryFileInputRef = useRef<HTMLInputElement>(null);
 
   // Live clock interval
   useEffect(() => {
@@ -125,10 +139,13 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
   // When selected resident changes, sync state with their existing record or reset to blank pending upload
   const handleSelectResident = (r: Resident) => {
     setSelectedResident(r);
+    setActivePhotoSlot('primary');
     const rec = getResidentTodayRecord(r.id);
     if (rec) {
       setCurrentRawPhotoUrl(rec.vitalsPhotoUrl);
       setWatermarkedPhotoUrl(rec.vitalsPhotoUrl);
+      setSecondaryRawPhotoUrl(rec.secondaryVitalsPhotoUrl || '');
+      setSecondaryWatermarkedPhotoUrl(rec.secondaryVitalsPhotoUrl || '');
       setBloodPressure(rec.readings.bloodPressure || '');
       setPulseRate(rec.readings.pulseRate);
       setSpo2(rec.readings.spo2);
@@ -140,11 +157,14 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
       setAiExtracted(true);
       setAiConfidence(96);
       setSelectedPresetIndex(-1);
+      setSecondarySelectedPresetIndex(-1);
       setAiFeedbackMessage('Loaded existing audited morning record.');
     } else {
       // RESET TO BLANK PENDING UPLOAD
       setCurrentRawPhotoUrl('');
       setWatermarkedPhotoUrl('');
+      setSecondaryRawPhotoUrl('');
+      setSecondaryWatermarkedPhotoUrl('');
       setBloodPressure('');
       setPulseRate(undefined);
       setSpo2(undefined);
@@ -156,11 +176,12 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
       setAiExtracted(false);
       setAiConfidence(null);
       setSelectedPresetIndex(-1);
+      setSecondarySelectedPresetIndex(-1);
       setAiFeedbackMessage('');
     }
   };
 
-  // Update watermark whenever resident, raw photo, readings, or time changes
+  // Update watermark for Photo 1 (Primary)
   useEffect(() => {
     let isCancelled = false;
 
@@ -188,7 +209,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
           setWatermarkedPhotoUrl(watermarked);
         }
       } catch (err) {
-        console.error('Watermark generation error:', err);
+        console.error('Watermark generation error (Photo 1):', err);
       } finally {
         if (!isCancelled) {
           setIsWatermarking(false);
@@ -203,8 +224,50 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
     };
   }, [currentRawPhotoUrl, selectedResident, caregiver.name, bloodPressure, pulseRate, spo2, temperature]);
 
+  // Update watermark for Photo 2 (Secondary / Optional)
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function generateSecondaryWatermark() {
+      if (!secondaryRawPhotoUrl || !selectedResident) {
+        setSecondaryWatermarkedPhotoUrl('');
+        return;
+      }
+      setIsSecondaryWatermarking(true);
+      try {
+        const watermarked = await applyVitalsWatermark(secondaryRawPhotoUrl, {
+          residentFullName: selectedResident.fullName,
+          roomNumber: selectedResident.roomNumber,
+          bedNumber: selectedResident.bedNumber,
+          caregiverName: caregiver.name,
+          timestamp: currentTime,
+          isBefore7am: currentTime.getHours() < 7,
+          bloodPressure: bloodPressure || undefined,
+          pulseRate,
+          spo2,
+          temperature,
+        });
+
+        if (!isCancelled) {
+          setSecondaryWatermarkedPhotoUrl(watermarked);
+        }
+      } catch (err) {
+        console.error('Watermark generation error (Photo 2):', err);
+      } finally {
+        if (!isCancelled) {
+          setIsSecondaryWatermarking(false);
+        }
+      }
+    }
+
+    generateSecondaryWatermark();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [secondaryRawPhotoUrl, selectedResident, caregiver.name, bloodPressure, pulseRate, spo2, temperature]);
+
   const completedCount = residents.filter((r) => getResidentTodayRecord(r.id)).length;
-  const isCurrentlyPre7Am = currentTime.getHours() < 7;
 
   // AI Vision analysis with Gemini
   const analyzePhotoWithAI = async (photoInput: string, customDeviceHint?: string) => {
@@ -226,35 +289,25 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
 
       if (res.ok) {
         const data = await res.json();
-        // Update fields strictly from what the AI read on screen
+        // Update fields intelligently
         if (data.bloodPressure) {
           setBloodPressure(data.bloodPressure);
-        } else {
-          setBloodPressure('');
         }
 
         if (data.pulseRate !== null && data.pulseRate !== undefined) {
           setPulseRate(data.pulseRate);
-        } else {
-          setPulseRate(undefined);
         }
 
         if (data.spo2 !== null && data.spo2 !== undefined) {
           setSpo2(data.spo2);
-        } else {
-          setSpo2(undefined);
         }
 
         if (data.temperature !== null && data.temperature !== undefined) {
           setTemperature(data.temperature);
-        } else {
-          setTemperature(undefined);
         }
 
         if (data.bloodSugar !== null && data.bloodSugar !== undefined) {
           setBloodSugar(data.bloodSugar);
-        } else {
-          setBloodSugar(undefined);
         }
 
         if (data.deviceType) setDeviceType(data.deviceType);
@@ -278,58 +331,81 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
     }
   };
 
-  // Handle Preset selection
+  // Handle Preset selection for current active slot
   const handleSelectPreset = (index: number) => {
     const preset = SAMPLE_VITALS_PRESETS[index];
-    setSelectedPresetIndex(index);
-    setCurrentRawPhotoUrl(preset.imageUrl);
-    setDeviceType(preset.deviceType);
+    if (activePhotoSlot === 'primary') {
+      setSelectedPresetIndex(index);
+      setCurrentRawPhotoUrl(preset.imageUrl);
+      setDeviceType(preset.deviceType);
+    } else {
+      setSecondarySelectedPresetIndex(index);
+      setSecondaryRawPhotoUrl(preset.imageUrl);
+    }
     // Trigger real AI analysis on the preset photo
     analyzePhotoWithAI(preset.imageUrl, preset.deviceType);
   };
 
   // Handle local file upload (camera or file)
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, slot: 'primary' | 'secondary') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setSelectedPresetIndex(-1);
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      setCurrentRawPhotoUrl(dataUrl);
+      if (slot === 'primary') {
+        setSelectedPresetIndex(-1);
+        setCurrentRawPhotoUrl(dataUrl);
+      } else {
+        setSecondarySelectedPresetIndex(-1);
+        setSecondaryRawPhotoUrl(dataUrl);
+      }
       // Run real AI Vision OCR on newly uploaded photo
       analyzePhotoWithAI(dataUrl);
     };
     reader.readAsDataURL(file);
   };
 
-  // Clear current photo back to blank
-  const handleClearPhoto = () => {
-    setCurrentRawPhotoUrl('');
-    setWatermarkedPhotoUrl('');
-    setBloodPressure('');
-    setPulseRate(undefined);
-    setSpo2(undefined);
-    setTemperature(undefined);
-    setBloodSugar(undefined);
-    setDeviceType('');
-    setNotes('');
-    setStatus('normal');
-    setAiExtracted(false);
-    setAiConfidence(null);
-    setSelectedPresetIndex(-1);
-    setAiFeedbackMessage('');
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  // Clear photo for a specific slot
+  const handleClearPhoto = (slot: 'primary' | 'secondary') => {
+    if (slot === 'primary') {
+      setCurrentRawPhotoUrl('');
+      setWatermarkedPhotoUrl('');
+      setSelectedPresetIndex(-1);
+      if (!secondaryRawPhotoUrl) {
+        setBloodPressure('');
+        setPulseRate(undefined);
+        setSpo2(undefined);
+        setTemperature(undefined);
+        setBloodSugar(undefined);
+        setDeviceType('');
+        setNotes('');
+        setStatus('normal');
+        setAiExtracted(false);
+        setAiConfidence(null);
+        setAiFeedbackMessage('');
+      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    } else {
+      setSecondaryRawPhotoUrl('');
+      setSecondaryWatermarkedPhotoUrl('');
+      setSecondarySelectedPresetIndex(-1);
+      if (secondaryFileInputRef.current) secondaryFileInputRef.current.value = '';
+    }
   };
 
-  // Save Morning Vitals Record
+  // Save Morning Vitals Record (supports Photo 1 and optional Photo 2)
   const handleSave = async () => {
-    if (!selectedResident || !currentRawPhotoUrl) return;
+    const activePhoto1 = watermarkedPhotoUrl || currentRawPhotoUrl;
+    const activePhoto2 = secondaryWatermarkedPhotoUrl || secondaryRawPhotoUrl;
+
+    if (!selectedResident || (!activePhoto1 && !activePhoto2)) return;
     setIsSubmitting(true);
 
     try {
-      const finalPhotoUrl = watermarkedPhotoUrl || currentRawPhotoUrl;
+      const primaryPhoto = activePhoto1 || activePhoto2;
+      const secondaryPhoto = activePhoto1 && activePhoto2 ? activePhoto2 : undefined;
       const hours = currentTime.getHours();
       const isBefore7am = hours < 7;
 
@@ -340,7 +416,8 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
         bedNumber: selectedResident.bedNumber,
         caregiverId: caregiver.id,
         caregiverName: caregiver.name,
-        vitalsPhotoUrl: finalPhotoUrl,
+        vitalsPhotoUrl: primaryPhoto,
+        secondaryVitalsPhotoUrl: secondaryPhoto,
         readings: {
           bloodPressure: bloodPressure || undefined,
           pulseRate,
@@ -361,7 +438,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
           year: 'numeric',
         }),
         isBefore7am,
-        notes: notes || 'Morning vital signs round completed.',
+        notes: notes || 'Daily vital signs round completed.',
         status,
         aiExtracted,
       });
@@ -379,7 +456,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 1. MORNING 07:00 AM PROTOCOL HEADER BANNER */}
+      {/* 1. DAILY VITALS PROTOCOL HEADER BANNER */}
       <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center space-x-3.5">
@@ -389,21 +466,15 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
             <div>
               <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                 <h2 className="text-base font-serif font-bold text-[#5A5A40]">
-                  Morning Vital Signs Round (Pre-07:00 AM Protocol)
+                  Daily Vital Signs Round
                 </h2>
-                <span
-                  className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border flex items-center space-x-1 ${
-                    isCurrentlyPre7Am
-                      ? 'bg-[#EBF1EA] text-[#5A5A40] border-[#889E81]/40'
-                      : 'bg-[#F0ECE2] text-[#7C7C6D] border-[#E6E2D3]'
-                  }`}
-                >
+                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border flex items-center space-x-1 bg-[#EBF1EA] text-[#5A5A40] border-[#889E81]/40">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#889E81] animate-pulse"></span>
-                  <span>{isCurrentlyPre7Am ? 'ACTIVE PRE-7 AM WINDOW' : '07:00 AM ROUND AUDIT'}</span>
+                  <span>DAILY ROUND AUDIT</span>
                 </span>
               </div>
               <p className="text-xs text-[#7C7C6D] mt-0.5">
-                Every morning before 07:00 AM, take a photo of the vital signs monitor for each resident. The system embeds a tamper-evident date &amp; time watermark and extracts readings with AI Vision.
+                Take a photo of the vital signs monitor for each resident during the daily round. The system embeds a tamper-evident date &amp; time watermark and extracts readings with AI Vision.
               </p>
             </div>
           </div>
@@ -438,12 +509,12 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
         {/* Resident Bed Quick Selection Strip */}
         <div className="mt-4 pt-4 border-t border-[#E6E2D3]">
           <span className="text-[11px] font-bold uppercase tracking-wider text-[#7C7C6D] block mb-2">
-            Select Resident Bed for Morning Check:
+            Select Resident Bed for Daily Check:
           </span>
           {residents.length === 0 ? (
             <div className="text-center py-4 px-4 bg-[#FAF9F6] rounded-2xl border border-dashed border-[#E6E2D3]">
               <p className="text-xs font-semibold text-[#5A5A40]">No resident beds registered yet</p>
-              <p className="text-[11px] text-[#7C7C6D] mt-0.5">Please add a resident in the Admin Dashboard to start the morning vitals protocol.</p>
+              <p className="text-[11px] text-[#7C7C6D] mt-0.5">Please add a resident in the Admin Dashboard to start the daily vitals protocol.</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -496,7 +567,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                         </span>
                       ) : (
                         <span
-                          title="Pending Pre-7AM Photo"
+                          title="Pending Photo Upload"
                           className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]"
                         >
                           Pending upload
@@ -513,55 +584,170 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
 
       {/* 2. MAIN INTERACTIVE CAPTURE & WATERMARKING STATION */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* LEFT: Photo Capture & Watermarked Live Canvas (6 cols) */}
+        {/* LEFT: Dual Photo Capture & Watermarked Live Canvas (6 cols) */}
         <div className="lg:col-span-6 space-y-4">
           <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
+            {/* Header & Tab Selector for Monitor 1 vs Monitor 2 */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="flex items-center space-x-2">
                 <Camera className="w-4 h-4 text-[#889E81]" />
                 <h3 className="text-xs font-bold uppercase tracking-wider text-[#5A5A40]">
-                  1. Vital Sign Device Photo &amp; Watermark
+                  1. Vital Sign Device Photos &amp; Watermark
                 </h3>
               </div>
-              {currentRawPhotoUrl ? (
+
+              {/* Slot Switcher Tabs */}
+              <div className="flex items-center bg-[#FAF9F6] p-1 rounded-xl border border-[#E6E2D3] self-start sm:self-auto">
+                <button
+                  type="button"
+                  id="tab-monitor-1"
+                  onClick={() => setActivePhotoSlot('primary')}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    activePhotoSlot === 'primary'
+                      ? 'bg-white text-[#5A5A40] shadow-2xs border border-[#E6E2D3]'
+                      : 'text-[#7C7C6D] hover:text-[#5A5A40]'
+                  }`}
+                >
+                  <span>Monitor 1</span>
+                  {currentRawPhotoUrl ? (
+                    <span className="w-2 h-2 rounded-full bg-[#889E81]" title="Photo 1 attached"></span>
+                  ) : (
+                    <span className="w-2 h-2 rounded-full bg-amber-400" title="Photo 1 pending"></span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  id="tab-monitor-2"
+                  onClick={() => setActivePhotoSlot('secondary')}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    activePhotoSlot === 'secondary'
+                      ? 'bg-white text-[#5A5A40] shadow-2xs border border-[#E6E2D3]'
+                      : 'text-[#7C7C6D] hover:text-[#5A5A40]'
+                  }`}
+                >
+                  <span>Monitor 2</span>
+                  <span className="text-[9px] text-[#8C8C7E] font-normal">(Opt)</span>
+                  {secondaryRawPhotoUrl ? (
+                    <span className="w-2 h-2 rounded-full bg-[#889E81]" title="Photo 2 attached"></span>
+                  ) : null}
+                </button>
+              </div>
+            </div>
+
+            {/* Active Slot Status & Clear Controls */}
+            <div className="flex items-center justify-between pt-0.5 text-xs">
+              <div className="flex items-center space-x-2">
+                <span className="font-bold text-[#5A5A40]">
+                  {activePhotoSlot === 'primary' ? '📸 Primary Device Screen (Required)' : '📷 2nd Device Screen (Optional)'}
+                </span>
+              </div>
+
+              {activePhotoSlot === 'primary' ? (
+                currentRawPhotoUrl ? (
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[11px] font-semibold text-[#889E81] bg-[#EBF1EA] px-2.5 py-0.5 rounded-full border border-[#889E81]/30 flex items-center space-x-1">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Watermark Active</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleClearPhoto('primary')}
+                      className="text-[10px] text-red-600 hover:text-red-700 font-bold px-2 py-0.5 rounded-md hover:bg-red-50 cursor-pointer"
+                    >
+                      Clear Photo 1
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-[11px] font-bold text-[#92400E] bg-[#FEF3C7] px-2.5 py-0.5 rounded-full border border-[#FDE68A] flex items-center space-x-1">
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <span>Pending upload</span>
+                  </span>
+                )
+              ) : secondaryRawPhotoUrl ? (
                 <div className="flex items-center space-x-2">
                   <span className="text-[11px] font-semibold text-[#889E81] bg-[#EBF1EA] px-2.5 py-0.5 rounded-full border border-[#889E81]/30 flex items-center space-x-1">
                     <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Watermark Active</span>
+                    <span>2nd Watermark Active</span>
                   </span>
                   <button
                     type="button"
-                    onClick={handleClearPhoto}
+                    onClick={() => handleClearPhoto('secondary')}
                     className="text-[10px] text-red-600 hover:text-red-700 font-bold px-2 py-0.5 rounded-md hover:bg-red-50 cursor-pointer"
                   >
-                    Clear Photo
+                    Remove Photo 2
                   </button>
                 </div>
               ) : (
-                <span className="text-[11px] font-bold text-[#92400E] bg-[#FEF3C7] px-2.5 py-0.5 rounded-full border border-[#FDE68A] flex items-center space-x-1">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  <span>Pending upload</span>
+                <span className="text-[11px] font-medium text-[#7C7C6D] bg-[#FAF9F6] px-2.5 py-0.5 rounded-full border border-[#E6E2D3]">
+                  Optional (e.g., Oximeter / Glucometer)
                 </span>
               )}
             </div>
 
             {/* Photo Preview Container with Live Watermark OR Pending Upload Placeholder */}
             <div className="relative rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2D2D24] aspect-4/3 flex items-center justify-center group">
-              {currentRawPhotoUrl ? (
-                watermarkedPhotoUrl ? (
+              {activePhotoSlot === 'primary' ? (
+                currentRawPhotoUrl ? (
+                  watermarkedPhotoUrl ? (
+                    <img
+                      src={watermarkedPhotoUrl}
+                      alt="Watermarked Primary Vital Sign Monitor"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="text-center p-6 text-[#FAF9F6]">
+                      <Activity className="w-10 h-10 text-[#889E81] mx-auto mb-2 animate-spin" />
+                      <p className="text-xs">Applying Clinical Watermark to Monitor 1...</p>
+                    </div>
+                  )
+                ) : (
+                  /* Empty Pending Upload State for Monitor 1 */
+                  <div className="flex flex-col items-center justify-center p-6 text-center space-y-3 bg-[#FAF9F6] w-full h-full border-2 border-dashed border-[#D6D2C4]">
+                    <div className="w-14 h-14 rounded-2xl bg-[#F0ECE2] text-[#7C7C6D] flex items-center justify-center border border-[#E6E2D3]">
+                      <Camera className="w-7 h-7" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-center space-x-2">
+                        <h4 className="text-sm font-bold text-[#5A5A40]">
+                          Monitor 1: Photo Required
+                        </h4>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]">
+                          Pending upload
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#7C7C6D] max-w-xs mx-auto">
+                        Please upload or capture a photo of the main vital signs monitor for{' '}
+                        <strong>{selectedResident?.fullName}</strong>. Gemini AI Vision will read the numbers automatically.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      id="upload-monitor-1-btn"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-4 py-2 bg-[#889E81] hover:bg-[#788E71] text-white rounded-full text-xs font-bold shadow-xs flex items-center space-x-2 transition-all cursor-pointer"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span>Capture / Upload Monitor 1 Photo</span>
+                    </button>
+                  </div>
+                )
+              ) : secondaryRawPhotoUrl ? (
+                secondaryWatermarkedPhotoUrl ? (
                   <img
-                    src={watermarkedPhotoUrl}
-                    alt="Watermarked Vital Sign Monitor"
+                    src={secondaryWatermarkedPhotoUrl}
+                    alt="Watermarked Secondary Vital Sign Monitor"
                     className="w-full h-full object-cover"
                   />
                 ) : (
                   <div className="text-center p-6 text-[#FAF9F6]">
                     <Activity className="w-10 h-10 text-[#889E81] mx-auto mb-2 animate-spin" />
-                    <p className="text-xs">Applying Clinical Watermark...</p>
+                    <p className="text-xs">Applying Clinical Watermark to Monitor 2...</p>
                   </div>
                 )
               ) : (
-                /* Empty Pending Upload State */
+                /* Empty State for Optional Monitor 2 */
                 <div className="flex flex-col items-center justify-center p-6 text-center space-y-3 bg-[#FAF9F6] w-full h-full border-2 border-dashed border-[#D6D2C4]">
                   <div className="w-14 h-14 rounded-2xl bg-[#F0ECE2] text-[#7C7C6D] flex items-center justify-center border border-[#E6E2D3]">
                     <Camera className="w-7 h-7" />
@@ -569,31 +755,31 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                   <div className="space-y-1">
                     <div className="flex items-center justify-center space-x-2">
                       <h4 className="text-sm font-bold text-[#5A5A40]">
-                        No Monitor Photo Uploaded
+                        Optional 2nd Monitor Photo
                       </h4>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]">
-                        Pending upload
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EBF1EA] text-[#5A5A40] border border-[#889E81]/30">
+                        Optional
                       </span>
                     </div>
                     <p className="text-xs text-[#7C7C6D] max-w-xs mx-auto">
-                      Please upload or capture a photo of the vital signs monitor for{' '}
-                      <strong>{selectedResident?.fullName}</strong>. Gemini AI Vision will read the numbers automatically.
+                      Upload an optional second monitor photo (e.g. standalone Pulse Oximeter, Thermometer, or Blood Glucose meter).
                     </p>
                   </div>
 
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-4 py-2 bg-[#889E81] hover:bg-[#788E71] text-white rounded-full text-xs font-bold shadow-xs flex items-center space-x-2 transition-all cursor-pointer"
+                    id="upload-monitor-2-btn"
+                    onClick={() => secondaryFileInputRef.current?.click()}
+                    className="px-4 py-2 bg-[#5A5A40] hover:bg-[#484833] text-white rounded-full text-xs font-bold shadow-xs flex items-center space-x-2 transition-all cursor-pointer"
                   >
                     <Upload className="w-4 h-4" />
-                    <span>Capture / Upload Monitor Photo</span>
+                    <span>Upload 2nd Monitor Photo</span>
                   </button>
                 </div>
               )}
 
               {/* Watermark Loading Spinner */}
-              {isWatermarking && (
+              {(isWatermarking || isSecondaryWatermarking) && (
                 <div className="absolute inset-0 bg-black/40 backdrop-blur-2xs flex items-center justify-center">
                   <div className="bg-white px-3.5 py-2 rounded-full shadow-lg flex items-center space-x-2 text-xs font-bold text-[#5A5A40]">
                     <RefreshCw className="w-3.5 h-3.5 text-[#889E81] animate-spin" />
@@ -614,10 +800,16 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
               )}
 
               {/* Zoom In button */}
-              {currentRawPhotoUrl && (
+              {((activePhotoSlot === 'primary' && currentRawPhotoUrl) || (activePhotoSlot === 'secondary' && secondaryRawPhotoUrl)) && (
                 <button
                   type="button"
-                  onClick={() => setSelectedPreviewImage(watermarkedPhotoUrl || currentRawPhotoUrl)}
+                  onClick={() =>
+                    setSelectedPreviewImage(
+                      activePhotoSlot === 'primary'
+                        ? watermarkedPhotoUrl || currentRawPhotoUrl
+                        : secondaryWatermarkedPhotoUrl || secondaryRawPhotoUrl
+                    )
+                  }
                   className="absolute top-3 right-3 p-2 bg-black/60 hover:bg-black/80 text-white rounded-full backdrop-blur-xs transition-opacity opacity-80 hover:opacity-100 cursor-pointer"
                   title="Zoom into Full Watermarked Photo"
                 >
@@ -626,15 +818,91 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
               )}
             </div>
 
-            {/* Quick Upload or Device Preset Switcher */}
+            {/* Side-by-Side Dual Thumbnail Dock */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              {/* Thumbnail 1 */}
+              <div
+                onClick={() => setActivePhotoSlot('primary')}
+                className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center space-x-2.5 ${
+                  activePhotoSlot === 'primary'
+                    ? 'bg-[#F7F5F0] border-2 border-[#889E81] shadow-2xs'
+                    : 'bg-[#FAF9F6] border-[#E6E2D3] hover:bg-white'
+                }`}
+              >
+                <div className="w-10 h-10 rounded-lg overflow-hidden bg-[#2D2D24] shrink-0 border border-[#E6E2D3] flex items-center justify-center">
+                  {currentRawPhotoUrl ? (
+                    <img
+                      src={watermarkedPhotoUrl || currentRawPhotoUrl}
+                      alt="Monitor 1"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <Camera className="w-4 h-4 text-[#7C7C6D]" />
+                  )}
+                </div>
+                <div className="truncate text-left">
+                  <div className="text-xs font-bold text-[#5A5A40] flex items-center space-x-1">
+                    <span>Monitor 1</span>
+                    {currentRawPhotoUrl ? (
+                      <span className="text-[10px] text-[#889E81]">✓</span>
+                    ) : (
+                      <span className="text-[10px] text-amber-600">*</span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-[#7C7C6D] truncate block">
+                    {currentRawPhotoUrl ? 'Primary Attached' : 'Pending Upload'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Thumbnail 2 */}
+              <div
+                onClick={() => setActivePhotoSlot('secondary')}
+                className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center space-x-2.5 ${
+                  activePhotoSlot === 'secondary'
+                    ? 'bg-[#F7F5F0] border-2 border-[#889E81] shadow-2xs'
+                    : 'bg-[#FAF9F6] border-[#E6E2D3] hover:bg-white'
+                }`}
+              >
+                <div className="w-10 h-10 rounded-lg overflow-hidden bg-[#2D2D24] shrink-0 border border-[#E6E2D3] flex items-center justify-center">
+                  {secondaryRawPhotoUrl ? (
+                    <img
+                      src={secondaryWatermarkedPhotoUrl || secondaryRawPhotoUrl}
+                      alt="Monitor 2"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <Upload className="w-4 h-4 text-[#7C7C6D]" />
+                  )}
+                </div>
+                <div className="truncate text-left">
+                  <div className="text-xs font-bold text-[#5A5A40] flex items-center space-x-1">
+                    <span>Monitor 2</span>
+                    <span className="text-[9px] text-[#8C8C7E] font-normal">(Opt)</span>
+                    {secondaryRawPhotoUrl && (
+                      <span className="text-[10px] text-[#889E81]">✓</span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-[#7C7C6D] truncate block">
+                    {secondaryRawPhotoUrl ? '2nd Attached' : '+ Add 2nd Photo'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Upload or Device Preset Switcher for Active Slot */}
             <div className="space-y-2.5 pt-1">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold uppercase text-[#7C7C6D]">
-                  Device Screen Presets / Direct Capture:
+                  {activePhotoSlot === 'primary' ? 'Presets / Upload for Monitor 1:' : 'Presets / Upload for Monitor 2:'}
                 </span>
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() =>
+                    activePhotoSlot === 'primary'
+                      ? fileInputRef.current?.click()
+                      : secondaryFileInputRef.current?.click()
+                  }
                   className="text-xs font-bold text-[#889E81] hover:text-[#5A5A40] flex items-center space-x-1 cursor-pointer underline"
                 >
                   <Upload className="w-3.5 h-3.5" />
@@ -645,7 +913,15 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                   type="file"
                   accept="image/*"
                   capture="environment"
-                  onChange={handlePhotoUpload}
+                  onChange={(e) => handlePhotoUpload(e, 'primary')}
+                  className="hidden"
+                />
+                <input
+                  ref={secondaryFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => handlePhotoUpload(e, 'secondary')}
                   className="hidden"
                 />
               </div>
@@ -668,19 +944,24 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                     }
                   };
 
+                  const isSlotPresetSelected =
+                    activePhotoSlot === 'primary'
+                      ? selectedPresetIndex === idx
+                      : secondarySelectedPresetIndex === idx;
+
                   return (
                     <button
                       key={idx}
                       type="button"
                       onClick={() => handleSelectPreset(idx)}
                       className={`p-2.5 rounded-xl border text-left text-xs transition-all cursor-pointer flex items-center space-x-2.5 ${
-                        selectedPresetIndex === idx
+                        isSlotPresetSelected
                           ? 'bg-[#F7F5F0] border-[#889E81] font-bold text-[#5A5A40] shadow-2xs'
                           : 'bg-[#FAF9F6] border-[#E6E2D3] text-[#7C7C6D] hover:bg-white'
                       }`}
                     >
                       <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
-                        selectedPresetIndex === idx
+                        isSlotPresetSelected
                           ? 'bg-white border-[#889E81]/40'
                           : 'bg-[#EBF1EA] border-[#889E81]/20'
                       }`}>
@@ -706,15 +987,21 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                 </h3>
               </div>
 
-              {currentRawPhotoUrl ? (
+              {(currentRawPhotoUrl || secondaryRawPhotoUrl) ? (
                 <button
                   type="button"
                   disabled={isAnalyzingPhoto}
-                  onClick={() => analyzePhotoWithAI(currentRawPhotoUrl)}
+                  onClick={() =>
+                    analyzePhotoWithAI(
+                      activePhotoSlot === 'primary'
+                        ? currentRawPhotoUrl || secondaryRawPhotoUrl
+                        : secondaryRawPhotoUrl || currentRawPhotoUrl
+                    )
+                  }
                   className="px-3 py-1 bg-[#EBF1EA] hover:bg-[#dce6da] text-[#5A5A40] text-xs font-bold rounded-full border border-[#889E81]/30 flex items-center space-x-1.5 transition-all cursor-pointer disabled:opacity-50"
                 >
                   <Sparkle className={`w-3.5 h-3.5 text-[#889E81] ${isAnalyzingPhoto ? 'animate-spin' : ''}`} />
-                  <span>{isAnalyzingPhoto ? 'Scanning...' : 'Re-Scan Monitor with AI'}</span>
+                  <span>{isAnalyzingPhoto ? 'Scanning...' : `Re-Scan ${activePhotoSlot === 'primary' ? 'Monitor 1' : 'Monitor 2'} with AI`}</span>
                 </button>
               ) : (
                 <span className="text-[11px] font-bold text-[#92400E] bg-[#FEF3C7] px-2.5 py-0.5 rounded-full border border-[#FDE68A]">
@@ -725,16 +1012,17 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
 
             {/* AI Confidence Notice / Status Banner */}
             <div className={`rounded-2xl p-3.5 border flex items-center justify-between text-xs ${
-              currentRawPhotoUrl
+              (currentRawPhotoUrl || secondaryRawPhotoUrl)
                 ? 'bg-[#FAF9F6] border-[#E6E2D3] text-[#5A5A40]'
                 : 'bg-[#FFFBEB] border-[#FDE68A] text-[#92400E]'
             }`}>
               <div className="flex items-center space-x-2">
-                <span className={`w-2 h-2 rounded-full ${currentRawPhotoUrl ? 'bg-[#889E81]' : 'bg-[#D97706]'}`}></span>
+                <span className={`w-2 h-2 rounded-full ${(currentRawPhotoUrl || secondaryRawPhotoUrl) ? 'bg-[#889E81]' : 'bg-[#D97706]'}`}></span>
                 <span>
-                  {currentRawPhotoUrl ? (
+                  {(currentRawPhotoUrl || secondaryRawPhotoUrl) ? (
                     <>
                       Detected Device: <strong>{deviceType || 'Medical Monitor Display'}</strong>
+                      {secondaryRawPhotoUrl ? ' (+ 2nd Monitor Verified)' : ''}
                     </>
                   ) : (
                     <>
@@ -744,7 +1032,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                 </span>
               </div>
               <span className="text-[11px] font-bold">
-                {currentRawPhotoUrl ? (
+                {(currentRawPhotoUrl || secondaryRawPhotoUrl) ? (
                   aiConfidence ? `${aiConfidence}% AI Vision Confidence` : (aiExtracted ? 'OCR Verified' : 'Custom Input')
                 ) : (
                   <span className="text-[#92400E]">Pending upload</span>
@@ -913,10 +1201,10 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
               <button
                 id="submit-morning-vitals-btn"
                 type="button"
-                disabled={isSubmitting || !currentRawPhotoUrl}
+                disabled={isSubmitting || (!currentRawPhotoUrl && !secondaryRawPhotoUrl)}
                 onClick={handleSave}
                 className={`w-full py-3 rounded-full font-bold text-xs shadow-xs flex items-center justify-center space-x-2 transition-all cursor-pointer ${
-                  currentRawPhotoUrl
+                  (currentRawPhotoUrl || secondaryRawPhotoUrl)
                     ? 'bg-[#889E81] hover:bg-[#788E71] text-white disabled:opacity-50'
                     : 'bg-[#E6E2D3] text-[#7C7C6D] cursor-not-allowed'
                 }`}
@@ -924,9 +1212,9 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                 {saveSuccess ? (
                   <>
                     <CheckCircle2 className="w-4 h-4 text-white" />
-                    <span>✓ Morning Vitals Stamped &amp; Recorded!</span>
+                    <span>✓ Daily Vitals Stamped &amp; Recorded!</span>
                   </>
-                ) : !currentRawPhotoUrl ? (
+                ) : (!currentRawPhotoUrl && !secondaryRawPhotoUrl) ? (
                   <>
                     <Camera className="w-4 h-4 text-[#7C7C6D]" />
                     <span>Photo Required to Save Vitals (Pending Upload)</span>
@@ -937,7 +1225,9 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                     <span>
                       {isSubmitting
                         ? 'Certifying & Saving...'
-                        : `Stamp & Save Pre-7 AM Vitals for ${selectedResident.fullName}`}
+                        : (currentRawPhotoUrl && secondaryRawPhotoUrl)
+                        ? `Stamp & Save 2 Verified Monitor Photos for ${selectedResident?.fullName}`
+                        : `Stamp & Save Daily Vitals for ${selectedResident?.fullName}`}
                     </span>
                   </>
                 )}
@@ -947,13 +1237,13 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
         </div>
       </div>
 
-      {/* 3. WARD MORNING VITALS AUDIT LOG FEED */}
+      {/* 3. WARD DAILY VITALS AUDIT LOG FEED */}
       <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <FileCheck className="w-4 h-4 text-[#889E81]" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#5A5A40]">
-              Today&apos;s Audited Morning Vitals Feed ({morningVitals.length} Recorded)
+              Today&apos;s Audited Daily Vitals Feed ({morningVitals.length} Recorded)
             </h3>
           </div>
           <span className="text-xs text-[#7C7C6D]">
@@ -978,37 +1268,77 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                       Room {record.roomNumber}, {record.bedNumber}
                     </span>
                   </div>
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                      record.isBefore7am
-                        ? 'bg-[#EBF1EA] text-[#5A5A40] border-[#889E81]/30'
-                        : 'bg-[#F0ECE2] text-[#7C7C6D] border-[#E6E2D3]'
-                    }`}
-                  >
-                    {record.isBefore7am ? '✓ Pre-7 AM Verified' : 'Routine Check'}
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-[#EBF1EA] text-[#5A5A40] border-[#889E81]/30">
+                    ✓ Verified {record.secondaryVitalsPhotoUrl ? '(2 Photos)' : ''}
                   </span>
                 </div>
 
-                {/* Watermarked Photo Thumbnail */}
-                <div
-                  onClick={() => setSelectedPreviewImage(record.vitalsPhotoUrl)}
-                  className="relative rounded-xl overflow-hidden border border-[#E6E2D3] aspect-16/10 cursor-pointer group bg-black"
-                >
-                  <img
-                    src={record.vitalsPhotoUrl}
-                    alt={record.residentFullName}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                  />
-                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-                    <span className="bg-white/90 text-[#5A5A40] text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center space-x-1 shadow">
-                      <ZoomIn className="w-3.5 h-3.5 text-[#889E81]" />
-                      <span>View Watermark</span>
-                    </span>
+                {/* Watermarked Photo Thumbnail(s) */}
+                {record.secondaryVitalsPhotoUrl ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Monitor 1 */}
+                    <div
+                      onClick={() => setSelectedPreviewImage(record.vitalsPhotoUrl)}
+                      className="relative rounded-xl overflow-hidden border border-[#E6E2D3] aspect-4/3 cursor-pointer group bg-black"
+                    >
+                      <img
+                        src={record.vitalsPhotoUrl}
+                        alt={`${record.residentFullName} - Monitor 1`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                        <span className="bg-white/90 text-[#5A5A40] text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center space-x-1 shadow">
+                          <ZoomIn className="w-3 h-3 text-[#889E81]" />
+                          <span>Monitor 1</span>
+                        </span>
+                      </div>
+                      <div className="absolute top-1 left-1 bg-black/75 backdrop-blur-2xs rounded px-1.5 py-0.2 text-[8px] text-white font-bold">
+                        Monitor 1
+                      </div>
+                    </div>
+
+                    {/* Monitor 2 */}
+                    <div
+                      onClick={() => setSelectedPreviewImage(record.secondaryVitalsPhotoUrl!)}
+                      className="relative rounded-xl overflow-hidden border border-[#E6E2D3] aspect-4/3 cursor-pointer group bg-black"
+                    >
+                      <img
+                        src={record.secondaryVitalsPhotoUrl}
+                        alt={`${record.residentFullName} - Monitor 2`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                        <span className="bg-white/90 text-[#5A5A40] text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center space-x-1 shadow">
+                          <ZoomIn className="w-3 h-3 text-[#889E81]" />
+                          <span>Monitor 2</span>
+                        </span>
+                      </div>
+                      <div className="absolute top-1 left-1 bg-black/75 backdrop-blur-2xs rounded px-1.5 py-0.2 text-[8px] text-emerald-300 font-bold">
+                        Monitor 2
+                      </div>
+                    </div>
                   </div>
-                  <div className="absolute bottom-1.5 left-2 right-2 bg-black/70 backdrop-blur-2xs rounded px-2 py-0.5 text-[9px] text-white truncate">
-                    ⏰ {record.formattedTime} &bull; {record.formattedDate}
+                ) : (
+                  <div
+                    onClick={() => setSelectedPreviewImage(record.vitalsPhotoUrl)}
+                    className="relative rounded-xl overflow-hidden border border-[#E6E2D3] aspect-16/10 cursor-pointer group bg-black"
+                  >
+                    <img
+                      src={record.vitalsPhotoUrl}
+                      alt={record.residentFullName}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                    />
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                      <span className="bg-white/90 text-[#5A5A40] text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center space-x-1 shadow">
+                        <ZoomIn className="w-3.5 h-3.5 text-[#889E81]" />
+                        <span>View Watermark</span>
+                      </span>
+                    </div>
+                    <div className="absolute bottom-1.5 left-2 right-2 bg-black/70 backdrop-blur-2xs rounded px-2 py-0.5 text-[9px] text-white truncate">
+                      ⏰ {record.formattedTime} &bull; {record.formattedDate}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Readings Chips */}
                 <div className="grid grid-cols-3 gap-1.5 text-center text-[10px]">

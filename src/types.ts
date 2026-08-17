@@ -57,7 +57,8 @@ export interface VitalsData {
   temperature?: number; // e.g. 36.6 °C
   spo2?: number; // e.g. 98%
   bloodSugar?: number; // e.g. 5.8 mmol/L
-  vitalsPhotoUrl?: string; // Watermarked photo of monitor/device
+  vitalsPhotoUrl?: string; // Watermarked photo of primary monitor/device
+  secondaryVitalsPhotoUrl?: string; // Optional watermarked photo of second monitor/device
   vitalsRecordedAt?: string;
   isBefore7am?: boolean;
   watermarkSummary?: string;
@@ -72,7 +73,8 @@ export interface MorningVitalsRecord {
   bedNumber: string;
   caregiverId: string;
   caregiverName: string;
-  vitalsPhotoUrl: string; // Watermarked photo
+  vitalsPhotoUrl: string; // Watermarked primary monitor photo
+  secondaryVitalsPhotoUrl?: string; // Optional watermarked secondary monitor photo
   readings: {
     bloodPressure?: string;
     pulseRate?: number;
