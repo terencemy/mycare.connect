@@ -102,7 +102,7 @@ export const supabaseRowToResident = (row: any): Resident => {
     roomNumber: String(row.room_number || row.roomNumber || '101'),
     bedNumber: row.bed_number || row.bedNumber || 'Bed 01',
     age: Number(row.age) || 80,
-    photoUrl: row.avatar_url || row.photo_url || row.photoUrl || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=400&auto=format&fit=crop&q=80',
+    photoUrl: row.avatar_url || row.photo_url || row.photoUrl || '',
     medicalNotes: row.medical_notes || row.medicalNotes || '',
     carePlan: Array.isArray(row.care_plan) ? row.care_plan : (row.carePlan || ['Routine vitals check']),
     dietaryRestrictions: row.dietary_notes || row.dietary_restrictions || row.dietaryRestrictions || 'Standard balanced',

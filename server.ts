@@ -137,7 +137,7 @@ function dbRowToResident(row: any): Resident {
     roomNumber: String(row.room_number || row.roomNumber || '101'),
     bedNumber: row.bed_number || row.bedNumber || 'Bed 01',
     age: Number(row.age) || 80,
-    photoUrl: row.avatar_url || row.photo_url || row.photoUrl || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=400&auto=format&fit=crop&q=80',
+    photoUrl: row.avatar_url || row.photo_url || row.photoUrl || '',
     medicalNotes: row.medical_notes || row.medicalNotes || '',
     carePlan: Array.isArray(row.care_plan) ? row.care_plan : (row.carePlan || ['Routine vitals check']),
     dietaryRestrictions: row.dietary_notes || row.dietary_restrictions || row.dietaryRestrictions || 'Standard balanced',
@@ -486,30 +486,7 @@ async function startServer() {
           .order('created_at', { ascending: false });
 
         if (!error && data && data.length > 0) {
-          const supabaseResidents = data.map(dbRowToResident);
-          // Merge Supabase residents with in-memory residents
-          const merged = [...residents];
-          supabaseResidents.forEach((sr) => {
-            const idx = merged.findIndex(
-              (m) =>
-                m.id === sr.id ||
-                m.fullName.trim().toLowerCase() === sr.fullName.trim().toLowerCase()
-            );
-            if (idx !== -1) {
-              merged[idx] = { ...merged[idx], ...sr };
-            } else {
-              merged.push(sr);
-            }
-          });
-          residents = merged;
-        } else if (!error && (!data || data.length === 0)) {
-          // If remote Supabase table is empty, auto-seed default residents into Supabase
-          try {
-            const rows = residents.map(residentToDbRow);
-            await safeUpsertResidentsServer(rows);
-          } catch (syncErr) {
-            console.warn('Auto-seed Supabase residents note:', syncErr);
-          }
+          residents = data.map(dbRowToResident);
         }
       }
     } catch (e) {
@@ -519,7 +496,10 @@ async function startServer() {
   });
 
   app.get('/api/residents/:id', (req, res) => {
-    const resident = residents.find((r) => r.id === req.params.id);
+    const targetUuid = toValidUuid(req.params.id);
+    const resident = residents.find(
+      (r) => r.id === req.params.id || toValidUuid(r.id) === targetUuid
+    );
     if (!resident) {
       return res.status(404).json({ error: 'Resident not found' });
     }
@@ -531,7 +511,15 @@ async function startServer() {
       id: req.body.id || `res_${Date.now()}`,
       ...req.body,
     };
-    residents.push(newResident);
+
+    const existingIndex = residents.findIndex(
+      (r) => r.id === newResident.id || toValidUuid(r.id) === toValidUuid(newResident.id)
+    );
+    if (existingIndex !== -1) {
+      residents[existingIndex] = newResident;
+    } else {
+      residents.push(newResident);
+    }
 
     // Asynchronously upsert to Supabase
     try {
@@ -548,12 +536,26 @@ async function startServer() {
   });
 
   app.put('/api/residents/:id', async (req, res) => {
-    const index = residents.findIndex((r) => r.id === req.params.id);
-    if (index === -1) {
-      return res.status(404).json({ error: 'Resident not found' });
+    const residentId = req.params.id;
+    const targetUuid = toValidUuid(residentId);
+    let index = residents.findIndex(
+      (r) =>
+        r.id === residentId ||
+        toValidUuid(r.id) === targetUuid ||
+        r.fullName.trim().toLowerCase() === (req.body.fullName || '').trim().toLowerCase()
+    );
+
+    let updatedResident: Resident;
+    if (index !== -1) {
+      residents[index] = { ...residents[index], ...req.body };
+      updatedResident = residents[index];
+    } else {
+      updatedResident = {
+        id: residentId,
+        ...req.body,
+      } as Resident;
+      residents.push(updatedResident);
     }
-    residents[index] = { ...residents[index], ...req.body };
-    const updatedResident = residents[index];
 
     // Asynchronously update in Supabase
     try {
@@ -569,20 +571,21 @@ async function startServer() {
   // Delete resident & deallocate bed
   app.delete('/api/residents/:id', async (req, res) => {
     const residentId = req.params.id;
+    const targetUuid = toValidUuid(residentId);
     const index = residents.findIndex(
-      (r) => r.id === residentId || toValidUuid(r.id) === toValidUuid(residentId)
+      (r) => r.id === residentId || toValidUuid(r.id) === targetUuid
     );
 
-    if (index === -1) {
-      return res.status(404).json({ error: 'Resident not found' });
+    let deletedResident: Resident | null = null;
+    if (index !== -1) {
+      [deletedResident] = residents.splice(index, 1);
     }
-
-    const [deletedResident] = residents.splice(index, 1);
 
     // Asynchronously delete from Supabase
     try {
-      const targetUuid = toValidUuid(residentId);
-      await supabaseServer.from('residents').delete().eq('id', targetUuid);
+      if (supabaseServer) {
+        await supabaseServer.from('residents').delete().or(`id.eq.${targetUuid},id.eq.${residentId}`);
+      }
     } catch (e) {
       console.warn('Supabase async delete error:', e);
     }

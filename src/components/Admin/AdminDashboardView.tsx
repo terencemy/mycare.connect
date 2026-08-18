@@ -517,7 +517,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       familyContactRelation: newFamilyRelation.trim() || 'Family Member',
       familyContactEmail: newFamilyEmail.trim(),
       familyContactPhone: newFamilyPhone.trim(),
-      photoUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=400&auto=format&fit=crop&q=80',
+      photoUrl: '',
       admissionDate: new Date().toISOString().split('T')[0],
     });
 

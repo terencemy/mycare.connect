@@ -131,7 +131,7 @@ export default function App() {
     });
   };
 
-  // Sync initial data from backend API and Supabase
+  // Sync initial and ongoing data from backend API and Supabase
   useEffect(() => {
     async function loadBackendData() {
       try {
@@ -142,7 +142,7 @@ export default function App() {
           fetch('/api/vitals/morning-records'),
         ]);
 
-        let loadedResidents: Resident[] = INITIAL_RESIDENTS;
+        let loadedResidents: Resident[] = [];
 
         if (resRes.ok) {
           const resData = await resRes.json();
@@ -151,43 +151,48 @@ export default function App() {
           }
         }
 
-        // Direct Supabase pull fallback/check
+        // Direct Supabase pull check for live persistence
         try {
           const supaResult = await fetchResidentsFromSupabase();
           if (supaResult.success && supaResult.residents.length > 0) {
-            const supaMap = new Map<string, Resident>();
-            loadedResidents.forEach((r) => supaMap.set(r.id, r));
-            supaResult.residents.forEach((sr) => {
-              supaMap.set(sr.id, { ...(supaMap.get(sr.id) || {}), ...sr });
-            });
-            loadedResidents = Array.from(supaMap.values());
+            loadedResidents = supaResult.residents;
           }
         } catch (supaErr) {
           console.warn('Client Supabase direct sync note:', supaErr);
         }
 
-        setResidents(loadedResidents);
+        if (loadedResidents.length > 0) {
+          setResidents(loadedResidents);
+        }
 
         if (logsRes.ok) {
           const logsData = await logsRes.json();
-          setCareLogs(logsData);
+          if (Array.isArray(logsData)) {
+            setCareLogs(logsData);
+          }
         }
         if (msgRes.ok) {
           const msgData = await msgRes.json();
-          setFamilyMessages(msgData);
+          if (Array.isArray(msgData)) {
+            setFamilyMessages(msgData);
+          }
         }
         if (vitalsRes.ok) {
           const vitalsData = await vitalsRes.json();
-          setMorningVitals(vitalsData);
+          if (Array.isArray(vitalsData)) {
+            setMorningVitals(vitalsData);
+          }
         }
       } catch (e) {
-        console.warn('Using local fallback data:', e);
+        console.warn('Sync notice:', e);
       } finally {
         setLoading(false);
       }
     }
 
     loadBackendData();
+    const interval = setInterval(loadBackendData, 6000);
+    return () => clearInterval(interval);
   }, []);
 
   // Determine current active user based on selected role
@@ -461,7 +466,7 @@ export default function App() {
         familyContactRelation: newRes.familyContactRelation || 'Family Member',
         familyContactEmail: newRes.familyContactEmail || '',
         familyContactPhone: newRes.familyContactPhone || '',
-        photoUrl: newRes.photoUrl || 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=400&auto=format&fit=crop&q=80',
+        photoUrl: newRes.photoUrl || '',
         admissionDate: newRes.admissionDate || new Date().toISOString().split('T')[0],
       };
 

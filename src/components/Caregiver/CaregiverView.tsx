@@ -72,15 +72,18 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
   morningVitals = [],
   onSaveMorningVitals,
 }) => {
-  // 1. Mandatory Resident Tagging State
-  const [selectedResident, setSelectedResident] = useState<Resident | null>(residents[0] || null);
+  // 1. Mandatory Resident Tagging State (derives live from residents prop for immediate sync with Admin edits)
+  const [selectedResidentId, setSelectedResidentId] = useState<string>(residents[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    if (!selectedResident && residents.length > 0) {
-      setSelectedResident(residents[0]);
+    if (!selectedResidentId && residents.length > 0) {
+      setSelectedResidentId(residents[0].id);
     }
-  }, [residents, selectedResident]);
+  }, [residents, selectedResidentId]);
+
+  const selectedResident =
+    residents.find((r) => r.id === selectedResidentId) || residents[0] || null;
 
   // 2. Media Upload State
   const [mediaUrl, setMediaUrl] = useState<string>('');
@@ -287,8 +290,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
           morningVitals={morningVitals}
           onSaveMorningVitals={onSaveMorningVitals}
           onSelectForCareLog={(record) => {
-            const targetRes = residents.find((r) => r.id === record.residentId);
-            if (targetRes) setSelectedResident(targetRes);
+            setSelectedResidentId(record.residentId);
             if (record.vitalsPhotoUrl) setMediaUrl(record.vitalsPhotoUrl);
             if (record.readings) {
               setVitals({
@@ -352,7 +354,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                         key={res.id}
                         id={`tag-resident-${res.id}`}
                         type="button"
-                        onClick={() => setSelectedResident(res)}
+                        onClick={() => setSelectedResidentId(res.id)}
                         className={`text-left p-3 rounded-[20px] border transition-all flex items-center space-x-3 cursor-pointer ${
                           isSelected
                             ? 'border-2 border-[#889E81] bg-[#F7F5F0] shadow-xs'
@@ -783,11 +785,18 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
                 key={log.id}
                 className="p-4 rounded-[20px] border border-[#E6E2D3] bg-[#FAF9F6] flex flex-col md:flex-row gap-4 items-start"
               >
-                <img
-                  src={log.mediaUrl}
-                  alt={log.residentFullName}
-                  className="w-full md:w-36 h-28 object-cover rounded-2xl shrink-0"
-                />
+                {log.mediaUrl ? (
+                  <img
+                    src={log.mediaUrl}
+                    alt={log.residentFullName}
+                    className="w-full md:w-36 h-28 object-cover rounded-2xl shrink-0 border border-[#E6E2D3]"
+                  />
+                ) : (
+                  <div className="w-full md:w-36 h-28 bg-[#EBF1EA] text-[#5A5A40] rounded-2xl flex flex-col items-center justify-center shrink-0 border border-[#889E81]/30">
+                    <Activity className="w-6 h-6 text-[#889E81] mb-1" />
+                    <span className="text-[10px] font-bold text-[#7C7C6D]">Care Routine</span>
+                  </div>
+                )}
                 <div className="flex-1 space-y-1.5 w-full">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center space-x-2">
