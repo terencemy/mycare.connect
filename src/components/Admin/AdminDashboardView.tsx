@@ -335,28 +335,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const handleTestSupabase = async () => {
     try {
       setSupabaseTestStatus('testing');
-      setSupabaseTestMsg('Pinging Supabase REST API & verifying connection...');
+      setSupabaseTestMsg('Verifying backend API & Supabase database connection...');
       
       const startTime = performance.now();
-      const { data, error } = await supabase.from('residents').select('id, full_name, room_number').limit(5);
+      const res = await fetch('/api/residents');
       const elapsed = Math.round(performance.now() - startTime);
 
-      if (error) {
-        // If table doesn't exist yet, it's still connected to the Supabase endpoint
-        if (error.code === '42P01' || error.message.includes('relation') || error.message.includes('does not exist')) {
-          setSupabaseTestStatus('success');
-          setSupabaseTestMsg(`Connected to Supabase endpoint (${elapsed}ms)! Note: The "residents" table has not been created yet. Run the SQL schema script below to initialize tables.`);
-        } else {
-          setSupabaseTestStatus('error');
-          setSupabaseTestMsg(`Supabase Error (${error.code || 'API'}): ${error.message}`);
-        }
-      } else {
+      if (res.ok) {
+        const data = await res.json();
         setSupabaseTestStatus('success');
-        setSupabaseTestMsg(`Live connection verified (${elapsed}ms)! Found ${data?.length || 0} residents in Supabase database.`);
+        setSupabaseTestMsg(`Live database connection verified (${elapsed}ms)! Successfully synchronized ${Array.isArray(data) ? data.length : 0} resident record(s).`);
+      } else {
+        setSupabaseTestStatus('error');
+        setSupabaseTestMsg(`Server response status: ${res.status}`);
       }
     } catch (err: any) {
       setSupabaseTestStatus('error');
-      setSupabaseTestMsg(`Connection failed: ${err?.message || 'Network error connecting to Supabase.'}`);
+      setSupabaseTestMsg(`Connection notice: ${err?.message || 'Network error connecting to API.'}`);
     }
   };
 

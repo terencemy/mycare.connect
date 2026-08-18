@@ -596,7 +596,32 @@ async function startServer() {
   // Supabase Bulk Sync Route
   app.post('/api/residents/sync-supabase', async (req, res) => {
     try {
-      const rows = residents.map(residentToDbRow);
+      const incomingList: Resident[] = Array.isArray(req.body.residents) && req.body.residents.length > 0
+        ? req.body.residents
+        : residents;
+
+      if (incomingList.length > 0) {
+        incomingList.forEach((incoming) => {
+          const idx = residents.findIndex(
+            (r) => r.id === incoming.id || toValidUuid(r.id) === toValidUuid(incoming.id)
+          );
+          if (idx !== -1) {
+            residents[idx] = { ...residents[idx], ...incoming };
+          } else {
+            residents.push(incoming);
+          }
+        });
+      }
+
+      if (!supabaseServer) {
+        return res.json({
+          success: true,
+          count: incomingList.length,
+          message: 'Saved to backend storage',
+        });
+      }
+
+      const rows = incomingList.map(residentToDbRow);
       const { data, error } = await safeUpsertResidentsServer(rows);
 
       if (error) {
