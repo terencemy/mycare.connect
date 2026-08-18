@@ -30,10 +30,10 @@ export const INITIAL_USERS: UserProfile[] = [
   },
   {
     id: 'user_family_1',
-    name: 'Family Member (Han Family)',
+    name: 'Family Member',
     role: 'family',
     email: 'family@careconnect.com',
-    residentId: 'res_han_sien_ting',
+    residentId: '',
     title: 'Family Contact / Next of Kin'
   }
 ];

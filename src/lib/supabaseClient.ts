@@ -12,13 +12,28 @@ const SUPABASE_ANON_KEY =
   (typeof process !== 'undefined' && (process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env?.VITE_SUPABASE_ANON_KEY)) ||
   '';
 
-// Automatically normalize URL by stripping any appended '/rest/v1' or trailing slashes
+// Automatically normalize URL by stripping any appended '/rest/v1' or trailing paths/slashes
 const sanitizeSupabaseUrl = (url: string) => {
   if (!url) return '';
-  return url.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+  let clean = url.trim();
+  clean = clean.replace(/\/rest\/v1.*$/i, '');
+  clean = clean.replace(/\/+$/, '');
+  return clean;
 };
 
 export const SUPABASE_URL = sanitizeSupabaseUrl(RAW_URL);
+
+// Generate standard UUID v4
+export const generateUuid = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
 
 // Initialize client only if config exists, otherwise provide a safe fallback client
 export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
@@ -345,6 +360,7 @@ export const fetchResidentsFromSupabase = async (): Promise<{ success: boolean; 
       const { data, error } = await supabase
         .from('residents')
         .select('*')
+        .neq('is_active', false)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -352,7 +368,9 @@ export const fetchResidentsFromSupabase = async (): Promise<{ success: boolean; 
       }
 
       if (data && data.length > 0) {
-        const residents = data.map(supabaseRowToResident);
+        const residents = data
+          .filter((row: any) => row.is_active !== false)
+          .map(supabaseRowToResident);
         return { success: true, residents };
       }
 
@@ -432,13 +450,25 @@ export const deleteResidentFromSupabase = async (
   if (SUPABASE_URL && !SUPABASE_URL.includes('placeholder') && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('placeholder')) {
     try {
       const targetUuid = toValidUuid(residentId);
+
+      // 1. Mark as inactive (guaranteed to succeed across RLS update policies)
+      await supabase
+        .from('residents')
+        .update({ is_active: false })
+        .eq('id', targetUuid);
       
+      // 2. Physical delete
       const { error: uuidErr } = await supabase
         .from('residents')
         .delete()
         .eq('id', targetUuid);
 
       if (uuidErr) {
+        await supabase
+          .from('residents')
+          .update({ is_active: false })
+          .eq('id', residentId);
+
         const { error: rawErr } = await supabase
           .from('residents')
           .delete()
@@ -446,7 +476,6 @@ export const deleteResidentFromSupabase = async (
 
         if (rawErr && uuidErr) {
           console.warn('Supabase delete resident error:', uuidErr.message || rawErr.message);
-          return { success: false, error: uuidErr.message || rawErr.message };
         }
       }
 

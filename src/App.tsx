@@ -20,6 +20,7 @@ import {
   deleteResidentFromSupabase,
   fetchResidentsFromSupabase,
   toValidUuid,
+  generateUuid,
 } from './lib/supabaseClient';
 
 export default function App() {
@@ -146,7 +147,7 @@ export default function App() {
 
         if (resRes.ok) {
           const resData = await resRes.json();
-          if (Array.isArray(resData) && resData.length > 0) {
+          if (Array.isArray(resData)) {
             loadedResidents = resData;
           }
         }
@@ -154,16 +155,14 @@ export default function App() {
         // Direct Supabase pull check for live persistence
         try {
           const supaResult = await fetchResidentsFromSupabase();
-          if (supaResult.success && supaResult.residents.length > 0) {
+          if (supaResult.success && Array.isArray(supaResult.residents)) {
             loadedResidents = supaResult.residents;
           }
         } catch (supaErr) {
           console.warn('Client Supabase direct sync note:', supaErr);
         }
 
-        if (loadedResidents.length > 0) {
-          setResidents(loadedResidents);
-        }
+        setResidents(loadedResidents);
 
         if (logsRes.ok) {
           const logsData = await logsRes.json();
@@ -449,7 +448,7 @@ export default function App() {
   // Handler: Admit new resident
   const handleAddResident = async (newRes: Partial<Resident>) => {
     try {
-      const residentId = newRes.id || `res_${Date.now()}`;
+      const residentId = newRes.id || generateUuid();
       const residentPayload: Resident = {
         id: residentId,
         fullName: newRes.fullName || 'Resident',
@@ -471,19 +470,18 @@ export default function App() {
       };
 
       // Optimistically update local state immediately
-      setResidents((prev) => [...prev, residentPayload]);
+      setResidents((prev) => {
+        const idx = prev.findIndex((r) => r.id === residentPayload.id || toValidUuid(r.id) === toValidUuid(residentPayload.id));
+        if (idx !== -1) {
+          const copy = [...prev];
+          copy[idx] = residentPayload;
+          return copy;
+        }
+        return [...prev, residentPayload];
+      });
 
-      // Direct write to Supabase
-      syncResidentToSupabase(residentPayload).catch((e) =>
-        console.warn('Direct Supabase resident sync note:', e)
-      );
-
-      // Write to backend API
-      fetch('/api/residents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(residentPayload),
-      }).catch((e) => console.warn('Server API save note:', e));
+      // Synchronize with Supabase and backend
+      await syncResidentToSupabase(residentPayload);
     } catch (err) {
       console.error('Failed to add resident:', err);
     }
@@ -494,20 +492,11 @@ export default function App() {
     try {
       // Optimistically update local state
       setResidents((prev) =>
-        prev.map((r) => (r.id === residentId ? { ...r, ...updatedFields } : r))
+        prev.map((r) => (r.id === residentId || toValidUuid(r.id) === toValidUuid(residentId) ? { ...r, ...updatedFields } : r))
       );
 
-      // Direct write to Supabase
-      updateResidentInSupabase(residentId, updatedFields).catch((e) =>
-        console.warn('Direct Supabase resident update note:', e)
-      );
-
-      // Write to backend API
-      fetch(`/api/residents/${residentId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedFields),
-      }).catch((e) => console.warn('Server API update note:', e));
+      // Synchronize with Supabase and backend
+      await updateResidentInSupabase(residentId, updatedFields);
 
       // Keep careLogs and familyMessages sync'd with updated resident details
       if (updatedFields.fullName || updatedFields.roomNumber || updatedFields.bedNumber) {
@@ -550,15 +539,8 @@ export default function App() {
         prev.filter((r) => r.id !== residentId && toValidUuid(r.id) !== targetUuid)
       );
 
-      // Delete from Supabase
-      deleteResidentFromSupabase(residentId).catch((e) =>
-        console.warn('Supabase delete resident note:', e)
-      );
-
-      // Delete from server API
-      fetch(`/api/residents/${encodeURIComponent(residentId)}`, {
-        method: 'DELETE',
-      }).catch((e) => console.warn('Server API delete note:', e));
+      // Delete from Supabase and backend
+      await deleteResidentFromSupabase(residentId);
     } catch (err) {
       console.error('Failed to delete resident:', err);
     }

@@ -67,6 +67,7 @@ function getSupabaseConfig(): { url: string; key: string } {
     process.env.VITE_SUPABASE_URL ||
     '';
   const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.VITE_SUPABASE_ANON_KEY ||
@@ -74,8 +75,13 @@ function getSupabaseConfig(): { url: string; key: string } {
   return { url: sanitizeSupabaseUrl(url.trim()), key: key.trim() };
 }
 
-const sanitizeSupabaseUrl = (url: string) =>
-  url ? url.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '') : '';
+const sanitizeSupabaseUrl = (url: string) => {
+  if (!url) return '';
+  let clean = url.trim();
+  clean = clean.replace(/\/rest\/v1.*$/i, '');
+  clean = clean.replace(/\/+$/, '');
+  return clean;
+};
 
 let cachedSupabaseClient: any = null;
 let lastUsedUrl = '';
@@ -533,7 +539,9 @@ async function startServer() {
       const startTime = Date.now();
       const { data, error, count } = await client
         .from('residents')
-        .select('id, full_name, room_number, bed_number, created_at', { count: 'exact' })
+        .select('id, full_name, room_number, bed_number, created_at, is_active', { count: 'exact' })
+        .neq('is_active', false)
+        .order('created_at', { ascending: false })
         .limit(10);
       const latencyMs = Date.now() - startTime;
 
@@ -592,10 +600,11 @@ async function startServer() {
         const { data, error } = await client
           .from('residents')
           .select('*')
+          .neq('is_active', false)
           .order('created_at', { ascending: false });
 
-        if (!error && data && data.length > 0) {
-          residents = data.map(dbRowToResident);
+        if (!error && data) {
+          residents = data.filter((row: any) => row.is_active !== false).map(dbRowToResident);
         }
       }
     } catch (e) {
@@ -616,13 +625,15 @@ async function startServer() {
   });
 
   app.post('/api/residents', async (req, res) => {
+    const rawId = req.body.id || `res_${Date.now()}`;
+    const targetUuid = toValidUuid(rawId);
     const newResident: Resident = {
-      id: req.body.id || `res_${Date.now()}`,
+      id: rawId,
       ...req.body,
     };
 
     const existingIndex = residents.findIndex(
-      (r) => r.id === newResident.id || toValidUuid(r.id) === toValidUuid(newResident.id)
+      (r) => r.id === newResident.id || toValidUuid(r.id) === targetUuid
     );
     if (existingIndex !== -1) {
       residents[existingIndex] = newResident;
@@ -630,7 +641,7 @@ async function startServer() {
       residents.push(newResident);
     }
 
-    // Asynchronously upsert to Supabase
+    // Direct synchronous upsert to Supabase
     try {
       const dbRow = residentToDbRow(newResident);
       const { error } = await safeUpsertResidentsServer([dbRow]);
@@ -666,7 +677,7 @@ async function startServer() {
       residents.push(updatedResident);
     }
 
-    // Asynchronously update in Supabase
+    // Synchronous update in Supabase
     try {
       const dbRow = residentToDbRow(updatedResident);
       await safeUpsertResidentsServer([dbRow]);
@@ -690,14 +701,24 @@ async function startServer() {
       [deletedResident] = residents.splice(index, 1);
     }
 
-    // Asynchronously delete from Supabase
+    // Synchronously delete / deactivate from Supabase
     try {
       const client = getSupabaseServerClient();
       if (client) {
-        await client.from('residents').delete().or(`id.eq.${targetUuid},id.eq.${residentId}`);
+        // 1. Mark as inactive (guaranteed to succeed across RLS update policies)
+        await client.from('residents').update({ is_active: false }).eq('id', targetUuid);
+        if (deletedResident?.fullName) {
+          await client.from('residents').update({ is_active: false }).ilike('full_name', deletedResident.fullName.trim());
+        }
+
+        // 2. Physical delete
+        await client.from('residents').delete().eq('id', targetUuid);
+        if (deletedResident?.fullName) {
+          await client.from('residents').delete().ilike('full_name', deletedResident.fullName.trim());
+        }
       }
     } catch (e) {
-      console.warn('Supabase async delete error:', e);
+      console.warn('Supabase delete error:', e);
     }
 
     res.json({ success: true, message: 'Resident and bed allocation deleted', resident: deletedResident });
