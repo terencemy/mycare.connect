@@ -9,13 +9,38 @@ import { CareLog, FamilyMessage, Resident, UserProfile, MorningVitalsRecord, Reg
 
 // Lazy initialized Resend Client for real email OTP delivery
 let resendClient: Resend | null = null;
-function getResendClient(): Resend | null {
-  const apiKey = process.env.RESEND_API_KEY;
+
+function getResendConfig(): { apiKey: string | null; fromEmail: string } {
+  let apiKey = process.env.RESEND_API_KEY?.trim() || null;
+  let rawFrom = process.env.RESEND_FROM_EMAIL?.trim() || '';
+
+  // If RESEND_API_KEY is not set or does not start with 're_', but RESEND_FROM_EMAIL contains the API key (re_...), auto-recover
+  if ((!apiKey || !apiKey.startsWith('re_')) && rawFrom.startsWith('re_')) {
+    apiKey = rawFrom;
+    rawFrom = '';
+  }
+
+  // Validate and format fromEmail (Resend requires 'email@domain.com' or 'Name <email@domain.com>')
+  // If not specified or if an invalid API key string was passed, default safely to Resend's official onboarding address
+  let fromEmail = 'Care Connect <onboarding@resend.dev>';
+  if (rawFrom && !rawFrom.startsWith('re_') && rawFrom.includes('@')) {
+    if (rawFrom.includes('<') && rawFrom.includes('>')) {
+      fromEmail = rawFrom;
+    } else {
+      fromEmail = `Care Connect <${rawFrom}>`;
+    }
+  }
+
+  return { apiKey, fromEmail };
+}
+
+function getResendClient(): { client: Resend; fromEmail: string } | null {
+  const { apiKey, fromEmail } = getResendConfig();
   if (!apiKey) return null;
   if (!resendClient) {
     resendClient = new Resend(apiKey);
   }
-  return resendClient;
+  return { client: resendClient, fromEmail };
 }
 
 // Initialize in-memory state
@@ -34,11 +59,13 @@ interface PendingOtp {
 }
 const pendingAdminOtps = new Map<string, PendingOtp>();
 
-// Supabase Server Client Setup
-const RAW_SUPABASE_URL = process.env.SUPABASE_URL || 'https://jjaduhfcetzhzwmcjuri.supabase.co';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqYWR1aGZjZXR6aHp3bWNqdXJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2OTYwMDksImV4cCI6MjEwMjI3MjAwOX0.eUCwj5RC-Tixnte7RrEDyUQ3FbY_WufP3MaVkQVsaek';
-const sanitizeSupabaseUrl = (url: string) => url.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
-const supabaseServer = createClient(sanitizeSupabaseUrl(RAW_SUPABASE_URL), SUPABASE_ANON_KEY);
+// Supabase Server Client Setup - strictly loaded from environment variables
+const RAW_SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const sanitizeSupabaseUrl = (url: string) => url ? url.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '') : '';
+const supabaseServer = (RAW_SUPABASE_URL && SUPABASE_ANON_KEY)
+  ? createClient(sanitizeSupabaseUrl(RAW_SUPABASE_URL), SUPABASE_ANON_KEY)
+  : null;
 
 function toValidUuid(id?: string): string {
   if (!id) return '00000000-0000-4000-8000-000000000001';
@@ -156,6 +183,10 @@ const extractMissingColumnServer = (errorMessage?: string): string | null => {
 
 // Safe upsert helper with schema cache fallback
 async function safeUpsertResidentsServer(rows: any[]): Promise<{ data: any; error: any }> {
+  if (!supabaseServer) {
+    return { data: null, error: null };
+  }
+
   let currentRows = rows.map((r) => {
     const copy: any = { ...r };
     cachedMissingColumnsServer.forEach((col) => {
@@ -261,12 +292,12 @@ async function startServer() {
     const resend = getResendClient();
     let emailSent = false;
     let resendMessageId: string | undefined;
+    let dispatchError: string | undefined;
 
     if (resend) {
       try {
-        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Care Connect <onboarding@resend.dev>';
-        const { data, error } = await resend.emails.send({
-          from: fromEmail,
+        const { data, error } = await resend.client.emails.send({
+          from: resend.fromEmail,
           to: [admin.email],
           subject: `Care Connect Admin Verification Code: ${code}`,
           html: `
@@ -297,13 +328,15 @@ async function startServer() {
 
         if (error) {
           console.error('[Resend Error]', error);
+          dispatchError = error.message;
         } else {
           emailSent = true;
           resendMessageId = data?.id;
-          console.log(`[Resend Success] Real verification email delivered to ${admin.email} (Message ID: ${data?.id})`);
+          console.log(`[Resend Success] Real verification email delivered to ${admin.email} (Message ID: ${data?.id}, Sender: ${resend.fromEmail})`);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('[Resend Dispatch Exception]', err);
+        dispatchError = err?.message || 'Error communicating with Resend email service';
       }
     } else {
       console.log(`[Resend Notice] RESEND_API_KEY is not set in secrets. In-memory OTP code for ${admin.email} is: ${code}`);
@@ -313,13 +346,16 @@ async function startServer() {
       success: true,
       message: emailSent
         ? `A 6-digit verification code has been dispatched to your email (${admin.email}) via Resend.`
+        : dispatchError
+        ? `Email delivery error: ${dispatchError}`
         : `A 6-digit verification code has been generated and dispatched for ${admin.email}.`,
       adminName: admin.name,
       adminTitle: admin.title,
       maskedEmail: `${normalizedEmail.slice(0, 3)}••••@${normalizedEmail.split('@')[1]}`,
       expiresInSeconds: 600,
       emailSent,
-      resendConfigured: !!process.env.RESEND_API_KEY,
+      resendConfigured: !!getResendConfig().apiKey,
+      dispatchError,
     });
   });
 
@@ -434,24 +470,26 @@ async function startServer() {
   app.get('/api/residents', async (req, res) => {
     try {
       // Attempt to load from live Supabase if connected
-      const { data, error } = await supabaseServer
-        .from('residents')
-        .select('*')
-        .order('created_at', { ascending: false });
+      if (supabaseServer) {
+        const { data, error } = await supabaseServer
+          .from('residents')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
-        const supabaseResidents = data.map(dbRowToResident);
-        // Merge Supabase residents with in-memory residents
-        const merged = [...residents];
-        supabaseResidents.forEach((sr) => {
-          const idx = merged.findIndex((m) => m.id === sr.id || (m.fullName === sr.fullName && m.roomNumber === sr.roomNumber));
-          if (idx !== -1) {
-            merged[idx] = { ...merged[idx], ...sr };
-          } else {
-            merged.push(sr);
-          }
-        });
-        residents = merged;
+        if (!error && data && data.length > 0) {
+          const supabaseResidents = data.map(dbRowToResident);
+          // Merge Supabase residents with in-memory residents
+          const merged = [...residents];
+          supabaseResidents.forEach((sr) => {
+            const idx = merged.findIndex((m) => m.id === sr.id || (m.fullName === sr.fullName && m.roomNumber === sr.roomNumber));
+            if (idx !== -1) {
+              merged[idx] = { ...merged[idx], ...sr };
+            } else {
+              merged.push(sr);
+            }
+          });
+          residents = merged;
+        }
       }
     } catch (e) {
       console.warn('Supabase fetch note:', e);

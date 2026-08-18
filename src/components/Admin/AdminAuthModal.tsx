@@ -26,6 +26,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
     maskedEmail: string;
     emailSent?: boolean;
     resendConfigured?: boolean;
+    dispatchError?: string;
   } | null>(null);
   const [registeredAdmins, setRegisteredAdmins] = useState<RegisteredAdmin[]>([]);
   const [countdown, setCountdown] = useState(600); // 10 minutes
@@ -90,6 +91,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
         maskedEmail: data.maskedEmail || emailToUse,
         emailSent: data.emailSent,
         resendConfigured: data.resendConfigured,
+        dispatchError: data.dispatchError,
       });
       setStep('otp');
       setCountdown(600);
@@ -345,6 +347,11 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                 <p className="text-[11px] text-[#7C7C6D] leading-relaxed">
                   Please check your inbox at <strong className="text-[#5A5A40]">{email}</strong> for the 6-digit security code. If you do not see it in your primary inbox within 30 seconds, please check your spam folder.
                 </p>
+                {successInfo?.dispatchError && (
+                  <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] mt-1.5">
+                    <strong>Resend Delivery Note:</strong> {successInfo.dispatchError}
+                  </div>
+                )}
               </div>
 
               {/* 6-Digit Boxes */}
