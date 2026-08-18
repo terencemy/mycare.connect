@@ -133,6 +133,20 @@ export default function App() {
   };
 
   // Sync initial and ongoing data from backend API and Supabase
+  const reloadResidentsList = async () => {
+    try {
+      const res = await fetch('/api/residents');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setResidents(data);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to reload residents list:', e);
+    }
+  };
+
   useEffect(() => {
     async function loadBackendData() {
       try {
@@ -143,26 +157,12 @@ export default function App() {
           fetch('/api/vitals/morning-records'),
         ]);
 
-        let loadedResidents: Resident[] = [];
-
         if (resRes.ok) {
           const resData = await resRes.json();
           if (Array.isArray(resData)) {
-            loadedResidents = resData;
+            setResidents(resData);
           }
         }
-
-        // Direct Supabase pull check for live persistence
-        try {
-          const supaResult = await fetchResidentsFromSupabase();
-          if (supaResult.success && Array.isArray(supaResult.residents)) {
-            loadedResidents = supaResult.residents;
-          }
-        } catch (supaErr) {
-          console.warn('Client Supabase direct sync note:', supaErr);
-        }
-
-        setResidents(loadedResidents);
 
         if (logsRes.ok) {
           const logsData = await logsRes.json();
@@ -190,7 +190,7 @@ export default function App() {
     }
 
     loadBackendData();
-    const interval = setInterval(loadBackendData, 6000);
+    const interval = setInterval(loadBackendData, 4000);
     return () => clearInterval(interval);
   }, []);
 
