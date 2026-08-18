@@ -490,7 +490,11 @@ async function startServer() {
           // Merge Supabase residents with in-memory residents
           const merged = [...residents];
           supabaseResidents.forEach((sr) => {
-            const idx = merged.findIndex((m) => m.id === sr.id || (m.fullName === sr.fullName && m.roomNumber === sr.roomNumber));
+            const idx = merged.findIndex(
+              (m) =>
+                m.id === sr.id ||
+                m.fullName.trim().toLowerCase() === sr.fullName.trim().toLowerCase()
+            );
             if (idx !== -1) {
               merged[idx] = { ...merged[idx], ...sr };
             } else {
@@ -498,6 +502,14 @@ async function startServer() {
             }
           });
           residents = merged;
+        } else if (!error && (!data || data.length === 0)) {
+          // If remote Supabase table is empty, auto-seed default residents into Supabase
+          try {
+            const rows = residents.map(residentToDbRow);
+            await safeUpsertResidentsServer(rows);
+          } catch (syncErr) {
+            console.warn('Auto-seed Supabase residents note:', syncErr);
+          }
         }
       }
     } catch (e) {
