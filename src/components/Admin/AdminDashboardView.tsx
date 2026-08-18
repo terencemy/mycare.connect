@@ -332,22 +332,50 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [directorySearch, setDirectorySearch] = useState('');
   const [directoryBedFilter, setDirectoryBedFilter] = useState('All');
 
+  const [supabaseDetails, setSupabaseDetails] = useState<{
+    configured: boolean;
+    url: string;
+    keyConfigured: boolean;
+    tableStatus: string;
+    rowCount: number;
+    latencyMs?: number;
+  }>({
+    configured: false,
+    url: '',
+    keyConfigured: false,
+    tableStatus: 'idle',
+    rowCount: 0,
+  });
+
   const handleTestSupabase = async () => {
     try {
       setSupabaseTestStatus('testing');
       setSupabaseTestMsg('Verifying backend API & Supabase database connection...');
-      
-      const startTime = performance.now();
-      const res = await fetch('/api/residents');
-      const elapsed = Math.round(performance.now() - startTime);
 
-      if (res.ok) {
-        const data = await res.json();
+      const res = await fetch('/api/supabase-status');
+      const data = await res.json();
+
+      setSupabaseDetails({
+        configured: data.configured,
+        url: data.url,
+        keyConfigured: data.keyConfigured,
+        tableStatus: data.tableStatus,
+        rowCount: data.rowCount || 0,
+        latencyMs: data.latencyMs,
+      });
+
+      if (data.configured && data.tableStatus === 'ready') {
         setSupabaseTestStatus('success');
-        setSupabaseTestMsg(`Live database connection verified (${elapsed}ms)! Successfully synchronized ${Array.isArray(data) ? data.length : 0} resident record(s).`);
+        setSupabaseTestMsg(data.message || `Live Supabase connection verified! Found ${data.rowCount} resident records in public.residents.`);
+      } else if (data.configured && data.tableStatus === 'table_missing') {
+        setSupabaseTestStatus('error');
+        setSupabaseTestMsg('Connected to Supabase endpoint, but the "residents" table does not exist yet. Please run the SQL schema below in your Supabase SQL Editor.');
+      } else if (!data.configured) {
+        setSupabaseTestStatus('error');
+        setSupabaseTestMsg('Supabase environment variables (NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY) are not configured. Add them to your environment settings.');
       } else {
         setSupabaseTestStatus('error');
-        setSupabaseTestMsg(`Server response status: ${res.status}`);
+        setSupabaseTestMsg(data.message || data.error || 'Failed to verify Supabase connection.');
       }
     } catch (err: any) {
       setSupabaseTestStatus('error');
@@ -627,16 +655,37 @@ ALTER TABLE public.residents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.care_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.family_messages ENABLE ROW LEVEL SECURITY;
 
--- 6. Grant read/write policies for anon key / authenticated clients
+-- 6. Grant table permissions to anon & authenticated roles
+GRANT ALL ON public.residents TO anon, authenticated, service_role;
+GRANT ALL ON public.care_logs TO anon, authenticated, service_role;
+GRANT ALL ON public.family_messages TO anon, authenticated, service_role;
+
+-- 7. Grant read/write/delete policies for anon key / authenticated clients
+DROP POLICY IF EXISTS "Allow public read on residents" ON public.residents;
 CREATE POLICY "Allow public read on residents" ON public.residents FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow public insert on residents" ON public.residents;
 CREATE POLICY "Allow public insert on residents" ON public.residents FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public update on residents" ON public.residents;
 CREATE POLICY "Allow public update on residents" ON public.residents FOR UPDATE USING (true);
 
+DROP POLICY IF EXISTS "Allow public delete on residents" ON public.residents;
+CREATE POLICY "Allow public delete on residents" ON public.residents FOR DELETE USING (true);
+
+DROP POLICY IF EXISTS "Allow public read on care_logs" ON public.care_logs;
 CREATE POLICY "Allow public read on care_logs" ON public.care_logs FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow public insert on care_logs" ON public.care_logs;
 CREATE POLICY "Allow public insert on care_logs" ON public.care_logs FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow public read on family_messages" ON public.family_messages;
 CREATE POLICY "Allow public read on family_messages" ON public.family_messages FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow public insert on family_messages" ON public.family_messages;
 CREATE POLICY "Allow public insert on family_messages" ON public.family_messages FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public update on family_messages" ON public.family_messages;
 CREATE POLICY "Allow public update on family_messages" ON public.family_messages FOR UPDATE USING (true);
 `;
 
@@ -2041,7 +2090,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                   <span>PROJECT URL</span>
                 </div>
                 <div className="font-mono text-[#2C332A] truncate select-all">
-                  {SUPABASE_URL}
+                  {supabaseDetails.url || SUPABASE_URL || '(Not Configured in Environment Variables)'}
                 </div>
               </div>
 
@@ -2051,7 +2100,16 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                   <span>ANON PUBLIC KEY</span>
                 </div>
                 <div className="font-mono text-[#7C7C6D] truncate">
-                  eyJhbGciOiJIUzI1NiI...QVsaek <span className="text-[10px] text-[#889E81] font-semibold">(Configured)</span>
+                  {supabaseDetails.keyConfigured ? (
+                    <span className="text-emerald-700 font-semibold flex items-center space-x-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600 inline mr-1" />
+                      Configured &amp; Active
+                    </span>
+                  ) : (
+                    <span className="text-[#8C8C7E]">
+                      Pending configuration in Settings &gt; Secrets
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

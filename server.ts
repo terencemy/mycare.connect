@@ -59,13 +59,39 @@ interface PendingOtp {
 }
 const pendingAdminOtps = new Map<string, PendingOtp>();
 
-// Supabase Server Client Setup - strictly loaded from environment variables
-const RAW_SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-const sanitizeSupabaseUrl = (url: string) => url ? url.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '') : '';
-const supabaseServer = (RAW_SUPABASE_URL && SUPABASE_ANON_KEY)
-  ? createClient(sanitizeSupabaseUrl(RAW_SUPABASE_URL), SUPABASE_ANON_KEY)
-  : null;
+// Supabase Server Client Setup - dynamic getter supporting all environment variable naming conventions
+function getSupabaseConfig(): { url: string; key: string } {
+  const url =
+    process.env.SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    '';
+  const key =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    '';
+  return { url: sanitizeSupabaseUrl(url.trim()), key: key.trim() };
+}
+
+const sanitizeSupabaseUrl = (url: string) =>
+  url ? url.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '') : '';
+
+let cachedSupabaseClient: any = null;
+let lastUsedUrl = '';
+let lastUsedKey = '';
+
+function getSupabaseServerClient() {
+  const { url, key } = getSupabaseConfig();
+  if (!url || !key) return null;
+  if (cachedSupabaseClient && lastUsedUrl === url && lastUsedKey === key) {
+    return cachedSupabaseClient;
+  }
+  lastUsedUrl = url;
+  lastUsedKey = key;
+  cachedSupabaseClient = createClient(url, key);
+  return cachedSupabaseClient;
+}
 
 function toValidUuid(id?: string): string {
   if (!id) return '00000000-0000-4000-8000-000000000001';
@@ -183,8 +209,9 @@ const extractMissingColumnServer = (errorMessage?: string): string | null => {
 
 // Safe upsert helper with schema cache fallback
 async function safeUpsertResidentsServer(rows: any[]): Promise<{ data: any; error: any }> {
-  if (!supabaseServer) {
-    return { data: null, error: null };
+  const client = getSupabaseServerClient();
+  if (!client) {
+    return { data: null, error: { message: 'Supabase credentials are not configured in server environment variables' } };
   }
 
   let currentRows = rows.map((r) => {
@@ -198,7 +225,7 @@ async function safeUpsertResidentsServer(rows: any[]): Promise<{ data: any; erro
   let attempt = 0;
 
   while (attempt <= 25) {
-    const { data, error } = await supabaseServer
+    const { data, error } = await client
       .from('residents')
       .upsert(currentRows, { onConflict: 'id' })
       .select();
@@ -475,12 +502,94 @@ async function startServer() {
     res.json({ success: true, admin: target });
   });
 
+  // Supabase Status and Health Diagnostic Endpoint
+  app.get('/api/supabase-status', async (req, res) => {
+    const { url, key } = getSupabaseConfig();
+
+    if (!url || !key) {
+      return res.json({
+        configured: false,
+        url: url ? url : 'Not Configured',
+        keyConfigured: Boolean(key),
+        tableStatus: 'unconfigured',
+        rowCount: 0,
+        message: 'SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_ANON_KEY environment variables are missing.',
+      });
+    }
+
+    try {
+      const client = getSupabaseServerClient();
+      if (!client) {
+        return res.json({
+          configured: false,
+          url,
+          keyConfigured: true,
+          tableStatus: 'error',
+          rowCount: 0,
+          message: 'Could not initialize Supabase client with current credentials.',
+        });
+      }
+
+      const startTime = Date.now();
+      const { data, error, count } = await client
+        .from('residents')
+        .select('id, full_name, room_number, bed_number, created_at', { count: 'exact' })
+        .limit(10);
+      const latencyMs = Date.now() - startTime;
+
+      if (error) {
+        const isTableMissing =
+          error.code === '42P01' ||
+          error.message?.includes('relation') ||
+          error.message?.includes('does not exist') ||
+          error.message?.includes('not found');
+
+        return res.json({
+          configured: true,
+          url,
+          keyConfigured: true,
+          latencyMs,
+          tableStatus: isTableMissing ? 'table_missing' : 'error',
+          error: error.message,
+          errorCode: error.code,
+          rowCount: 0,
+          message: isTableMissing
+            ? 'Connected to Supabase endpoint, but the "residents" table has not been created yet. Execute the SQL Schema in your Supabase SQL Editor.'
+            : `Supabase query error: ${error.message} (Code: ${error.code})`,
+        });
+      }
+
+      const totalCount = count ?? (Array.isArray(data) ? data.length : 0);
+
+      return res.json({
+        configured: true,
+        url,
+        keyConfigured: true,
+        latencyMs,
+        tableStatus: 'ready',
+        rowCount: totalCount,
+        message: `Live Supabase connection verified (${latencyMs}ms)! Found ${totalCount} resident record(s) in your remote "public.residents" table.`,
+        sampleRows: data || [],
+      });
+    } catch (err: any) {
+      return res.json({
+        configured: true,
+        url,
+        keyConfigured: true,
+        tableStatus: 'exception',
+        error: err?.message || 'Network exception',
+        rowCount: 0,
+        message: `Failed to connect to Supabase: ${err?.message}`,
+      });
+    }
+  });
+
   // Residents Endpoints
   app.get('/api/residents', async (req, res) => {
     try {
-      // Attempt to load from live Supabase if connected
-      if (supabaseServer) {
-        const { data, error } = await supabaseServer
+      const client = getSupabaseServerClient();
+      if (client) {
+        const { data, error } = await client
           .from('residents')
           .select('*')
           .order('created_at', { ascending: false });
@@ -583,8 +692,9 @@ async function startServer() {
 
     // Asynchronously delete from Supabase
     try {
-      if (supabaseServer) {
-        await supabaseServer.from('residents').delete().or(`id.eq.${targetUuid},id.eq.${residentId}`);
+      const client = getSupabaseServerClient();
+      if (client) {
+        await client.from('residents').delete().or(`id.eq.${targetUuid},id.eq.${residentId}`);
       }
     } catch (e) {
       console.warn('Supabase async delete error:', e);
@@ -613,11 +723,12 @@ async function startServer() {
         });
       }
 
-      if (!supabaseServer) {
-        return res.json({
-          success: true,
-          count: incomingList.length,
-          message: 'Saved to backend storage',
+      const client = getSupabaseServerClient();
+      if (!client) {
+        return res.status(400).json({
+          success: false,
+          count: 0,
+          error: 'Supabase credentials are not configured in environment variables. Please add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or SUPABASE_URL and SUPABASE_ANON_KEY) in Settings/Environment Variables.',
         });
       }
 
