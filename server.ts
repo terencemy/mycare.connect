@@ -247,12 +247,21 @@ async function startServer() {
 
   // --- Admin Email Verification & Authentication Endpoints ---
 
-  // Get Registered Admin Directory
+  // Get Registered Admin Directory (Sanitized & Masked for Privacy)
   app.get('/api/auth/admin/registered-directory', (req, res) => {
-    res.json(registeredAdmins);
+    const safeList = registeredAdmins.map((adm) => ({
+      id: adm.id,
+      name: adm.name,
+      title: adm.title,
+      status: adm.status,
+      maskedEmail: `${adm.email.slice(0, 2)}••••@${adm.email.split('@')[1] || '***'}`,
+      registeredAt: adm.registeredAt,
+      lastLoginAt: adm.lastLoginAt,
+    }));
+    res.json(safeList);
   });
 
-  // Request Email Verification Code (Strictly for registered admins)
+  // Request Email Verification Code (Strictly for single Chief Admin)
   app.post('/api/auth/admin/send-verification-code', async (req, res) => {
     const { email } = req.body;
     if (!email || typeof email !== 'string') {
@@ -267,11 +276,11 @@ async function startServer() {
       (a) => a.email.toLowerCase() === normalizedEmail && a.status === 'active'
     );
 
-    // Strictly check if email is a registered and active admin
+    // Strictly check if email is the registered and active Chief Admin
     if (!admin) {
       return res.status(403).json({
         error: 'UNAUTHORIZED_EMAIL',
-        message: `Access Denied: The email "${email}" is not registered as an authorized administrator. Only registered administrative personnel may log in.`,
+        message: 'Access Denied: Unrecognized administrator credentials. This portal is strictly restricted to authorized Chief Administrator access.',
         isRegistered: false,
       });
     }
@@ -286,7 +295,7 @@ async function startServer() {
       admin,
     });
 
-    console.log(`[Admin Auth] Verification Code generated for ${normalizedEmail}: ${code} (Expires in 10m)`);
+    console.log(`[Chief Admin Auth] Verification Code generated for ${normalizedEmail.slice(0, 2)}••••: ${code} (Expires in 10m)`);
 
     // Dispatch real email via Resend if API key is configured
     const resend = getResendClient();
@@ -299,16 +308,16 @@ async function startServer() {
         const { data, error } = await resend.client.emails.send({
           from: resend.fromEmail,
           to: [admin.email],
-          subject: `Care Connect Admin Verification Code: ${code}`,
+          subject: `Care Connect Chief Admin Verification Code: ${code}`,
           html: `
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 32px 24px; background-color: #FAF9F6; border: 1px solid #E6E2D3; border-radius: 16px; color: #4A4A40;">
               <div style="margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #E6E2D3;">
                 <h1 style="font-size: 20px; font-weight: 700; color: #5A5A40; margin: 0;">Care Connect</h1>
-                <p style="font-size: 12px; color: #7C7C6D; margin: 4px 0 0 0;">Facility Administrative Verification &bull; Malaysia PDPA Compliant</p>
+                <p style="font-size: 12px; color: #7C7C6D; margin: 4px 0 0 0;">Chief Administrator Verification &bull; Malaysia PDPA Compliant</p>
               </div>
               
               <p style="font-size: 14px; line-height: 1.5; color: #5A5A40; margin: 0 0 16px 0;">Hello <strong>${admin.name}</strong>,</p>
-              <p style="font-size: 14px; line-height: 1.5; color: #5A5A40; margin: 0 0 24px 0;">You have requested administrator access to the Care Connect portal. Enter the 6-digit verification code below to complete your login:</p>
+              <p style="font-size: 14px; line-height: 1.5; color: #5A5A40; margin: 0 0 24px 0;">You have requested Chief Administrator access to the Care Connect portal. Enter the 6-digit verification code below to complete your login:</p>
               
               <div style="background-color: #FFFFFF; border: 1.5px solid #889E81; border-radius: 12px; padding: 24px; text-align: center; margin: 0 0 24px 0;">
                 <div style="font-size: 36px; font-weight: 800; letter-spacing: 10px; font-family: ui-monospace, Menlo, Monaco, monospace; color: #5A5A40;">${code}</div>
@@ -339,19 +348,19 @@ async function startServer() {
         dispatchError = err?.message || 'Error communicating with Resend email service';
       }
     } else {
-      console.log(`[Resend Notice] RESEND_API_KEY is not set in secrets. In-memory OTP code for ${admin.email} is: ${code}`);
+      console.log(`[Resend Notice] RESEND_API_KEY is not set in secrets. In-memory OTP code for Chief Admin is: ${code}`);
     }
 
     res.json({
       success: true,
       message: emailSent
-        ? `A 6-digit verification code has been dispatched to your email (${admin.email}) via Resend.`
+        ? `A 6-digit verification code has been dispatched to the authorized Chief Admin email via Resend.`
         : dispatchError
         ? `Email delivery error: ${dispatchError}`
-        : `A 6-digit verification code has been generated and dispatched for ${admin.email}.`,
+        : `A 6-digit verification code has been generated and dispatched to the Chief Admin.`,
       adminName: admin.name,
       adminTitle: admin.title,
-      maskedEmail: `${normalizedEmail.slice(0, 3)}••••@${normalizedEmail.split('@')[1]}`,
+      maskedEmail: `${normalizedEmail.slice(0, 2)}••••@${normalizedEmail.split('@')[1]}`,
       expiresInSeconds: 600,
       emailSent,
       resendConfigured: !!getResendConfig().apiKey,

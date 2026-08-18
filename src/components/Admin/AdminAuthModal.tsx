@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ShieldCheck, Mail, KeyRound, AlertCircle, CheckCircle2, ArrowRight, RefreshCw, X, Lock, Building2, UserCheck, ShieldAlert, Send } from 'lucide-react';
-import { RegisteredAdmin, UserProfile } from '../../types';
+import { UserProfile } from '../../types';
 
 interface AdminAuthModalProps {
   isOpen: boolean;
@@ -28,23 +28,13 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
     resendConfigured?: boolean;
     dispatchError?: string;
   } | null>(null);
-  const [registeredAdmins, setRegisteredAdmins] = useState<RegisteredAdmin[]>([]);
   const [countdown, setCountdown] = useState(600); // 10 minutes
 
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Load registered admins directory for quick assistance/selection
   useEffect(() => {
     if (isOpen) {
       setError(null);
-      fetch('/api/auth/admin/registered-directory')
-        .then((r) => r.json())
-        .then((data) => {
-          if (Array.isArray(data)) {
-            setRegisteredAdmins(data);
-          }
-        })
-        .catch((e) => console.warn('Directory load note:', e));
     }
   }, [isOpen]);
 
@@ -62,7 +52,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
   const handleSendCode = async (targetEmail?: string) => {
     const emailToUse = (targetEmail || email).trim();
     if (!emailToUse) {
-      setError('Please enter your facility administrator email address.');
+      setError('Please enter the registered Chief Administrator email address.');
       return;
     }
 
@@ -79,16 +69,16 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.message || 'Access Denied: Only registered administrators can log in.');
+        setError(data.message || 'Access Denied: Unrecognized administrator credentials.');
         setLoading(false);
         return;
       }
 
       setEmail(emailToUse);
       setSuccessInfo({
-        adminName: data.adminName || 'Administrator',
-        adminTitle: data.adminTitle || 'Facility Operations',
-        maskedEmail: data.maskedEmail || emailToUse,
+        adminName: data.adminName || 'Chief Admin',
+        adminTitle: data.adminTitle || 'Chief Administrator & Facility Director',
+        maskedEmail: data.maskedEmail || `${emailToUse.slice(0, 2)}••••@${emailToUse.split('@')[1] || '***'}`,
         emailSent: data.emailSent,
         resendConfigured: data.resendConfigured,
         dispatchError: data.dispatchError,
@@ -195,12 +185,12 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h3 className="font-serif text-lg font-bold text-[#5A5A40]">Admin Verification</h3>
+                <h3 className="font-serif text-lg font-bold text-[#5A5A40]">Chief Admin Access</h3>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#889E81]/15 text-[#5A5A40] border border-[#889E81]/30">
                   PDPA Secure
                 </span>
               </div>
-              <p className="text-xs text-[#7C7C6D]">Strictly for Registered Admin Personnel</p>
+              <p className="text-xs text-[#7C7C6D]">Strictly for Authorized Chief Administrator</p>
             </div>
           </div>
 
@@ -219,7 +209,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
           <div className="bg-[#F0ECE2]/60 border border-[#E6E2D3] rounded-2xl p-3.5 flex items-start space-x-3 text-xs text-[#5A5A40]">
             <Lock className="w-4 h-4 text-[#889E81] shrink-0 mt-0.5" />
             <p className="leading-relaxed">
-              Administrative actions, medical care reviews, and resident data modifications require verified email credentials. Unregistered emails will be strictly denied access.
+              Administrative functions, facility analytics, medical care audits, and resident records require verified Chief Admin credentials.
             </p>
           </div>
 
@@ -228,7 +218,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
             <div className="space-y-4 animate-in fade-in">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-[#5A5A40] flex items-center justify-between">
-                  <span>Registered Admin Email</span>
+                  <span>Chief Admin Email</span>
                   <span className="text-[11px] font-normal text-[#8C8C7E]">Official Facility Email</span>
                 </label>
                 <div className="relative">
@@ -241,7 +231,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                       setEmail(e.target.value);
                       setError(null);
                     }}
-                    placeholder="e.g. orangeredtravel@gmail.com or admin@careconnect.com"
+                    placeholder="Enter registered Chief Admin email..."
                     autoFocus
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
@@ -251,35 +241,6 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                     }}
                     className="w-full pl-10 pr-4 py-3 bg-[#FAF9F6] border border-[#E6E2D3] rounded-xl text-xs font-medium text-[#5A5A40] placeholder-[#8C8C7E] focus:outline-hidden focus:border-[#889E81] focus:ring-2 focus:ring-[#889E81]/20 transition-all"
                   />
-                </div>
-              </div>
-
-              {/* Registered Admin Directory Quick Picker */}
-              <div className="space-y-2 pt-1">
-                <div className="text-[11px] font-bold text-[#7C7C6D] flex items-center justify-between">
-                  <span>Authorized Admin Directory:</span>
-                  <span className="text-[10px] text-[#889E81] font-semibold">{registeredAdmins.length} Registered</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {registeredAdmins.map((adm) => (
-                    <button
-                      key={adm.id}
-                      type="button"
-                      onClick={() => {
-                        setEmail(adm.email);
-                        setError(null);
-                      }}
-                      className={`text-[11px] px-2.5 py-1 rounded-lg border text-left flex items-center space-x-1.5 transition-all cursor-pointer ${
-                        email.toLowerCase() === adm.email.toLowerCase()
-                          ? 'bg-[#889E81] text-white border-[#889E81] shadow-xs'
-                          : 'bg-[#FAF9F6] border-[#E6E2D3] text-[#5A5A40] hover:border-[#889E81]'
-                      }`}
-                    >
-                      <UserCheck className="w-3 h-3 opacity-70" />
-                      <span className="font-semibold">{adm.name}</span>
-                      <span className="text-[10px] opacity-80">({adm.email})</span>
-                    </button>
-                  ))}
                 </div>
               </div>
 
@@ -305,7 +266,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                 {loading ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Verifying Admin Registry...</span>
+                    <span>Verifying Chief Admin Registry...</span>
                   </>
                 ) : (
                   <>
@@ -322,10 +283,10 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
             <div className="space-y-5 animate-in fade-in">
               <div className="text-center space-y-1.5">
                 <div className="text-xs font-bold text-[#5A5A40]">
-                  Verification Code Sent to Registered Admin
+                  Verification Code Dispatched
                 </div>
                 <div className="text-xs font-mono font-bold text-[#889E81] bg-[#EBF1EA] px-3 py-1 rounded-lg inline-block border border-[#889E81]/30">
-                  {email}
+                  {successInfo?.maskedEmail || '••••••••@••••'}
                 </div>
                 {successInfo && (
                   <p className="text-[11px] text-[#7C7C6D]">
@@ -345,7 +306,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-[#7C7C6D] leading-relaxed">
-                  Please check your inbox at <strong className="text-[#5A5A40]">{email}</strong> for the 6-digit security code. If you do not see it in your primary inbox within 30 seconds, please check your spam folder.
+                  Please check your inbox at the registered email address for the 6-digit security code. If not received within 30 seconds, please check your spam folder.
                 </p>
                 {successInfo?.dispatchError && (
                   <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] mt-1.5">
@@ -414,12 +375,12 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                   {loading ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Authenticating Admin Credentials...</span>
+                      <span>Authenticating Chief Admin...</span>
                     </>
                   ) : (
                     <>
                       <ShieldCheck className="w-4 h-4" />
-                      <span>Verify &amp; Enter Admin Portal</span>
+                      <span>Verify &amp; Enter Chief Admin Portal</span>
                     </>
                   )}
                 </button>
@@ -432,7 +393,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                   }}
                   className="w-full py-2 text-xs font-semibold text-[#7C7C6D] hover:text-[#5A5A40] text-center cursor-pointer transition-colors"
                 >
-                  &larr; Use a different registered admin email
+                  &larr; Re-enter Chief Admin email
                 </button>
               </div>
             </div>

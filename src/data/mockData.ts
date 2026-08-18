@@ -2,48 +2,23 @@ import { Resident, CareLog, FamilyMessage, UserProfile, MorningVitalsRecord, Reg
 
 export const INITIAL_REGISTERED_ADMINS: RegisteredAdmin[] = [
   {
-    id: 'radmin_1',
-    name: 'Administrator',
-    email: 'admin@careconnect.com',
-    title: 'Operations & Care Director',
-    status: 'active',
-    registeredAt: '2026-01-10T08:00:00.000Z',
-    lastLoginAt: '2026-08-16T20:15:00.000Z',
-  },
-  {
-    id: 'radmin_2',
+    id: 'radmin_chief',
     name: 'Chief Admin',
     email: 'orangeredtravel@gmail.com',
-    title: 'Chief Medical & Facility Director',
+    title: 'Chief Administrator & Facility Director',
     status: 'active',
-    registeredAt: '2026-02-01T09:00:00.000Z',
-    lastLoginAt: '2026-08-16T22:30:00.000Z',
-  },
-  {
-    id: 'radmin_3',
-    name: 'Director of Nursing',
-    email: 'director@careconnect.com',
-    title: 'Clinical Care & Quality Director',
-    status: 'active',
-    registeredAt: '2026-03-15T10:30:00.000Z',
-  },
-  {
-    id: 'radmin_4',
-    name: 'Operations Manager',
-    email: 'operations@careconnect.com',
-    title: 'Shift & Compliance Lead',
-    status: 'active',
-    registeredAt: '2026-04-20T11:00:00.000Z',
+    registeredAt: '2026-01-01T08:00:00.000Z',
+    lastLoginAt: '2026-08-17T12:00:00.000Z',
   },
 ];
 
 export const INITIAL_USERS: UserProfile[] = [
   {
-    id: 'user_admin_1',
-    name: 'Administrator',
+    id: 'user_chief_admin',
+    name: 'Chief Admin',
     role: 'admin',
-    email: 'admin@careconnect.com',
-    title: 'Operations & Care Director'
+    email: 'orangeredtravel@gmail.com',
+    title: 'Chief Administrator & Facility Director'
   },
   {
     id: 'user_care_1',
