@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Resident } from '../types';
+import { Resident, CareLog, MorningVitalsRecord, VitalsData } from '../types';
 
 // User's Supabase Project Configuration loaded strictly from environment variables
 const RAW_URL =
@@ -505,3 +505,372 @@ export const deleteResidentFromSupabase = async (
 
   return { success: true };
 };
+
+// ==========================================
+// CARE LOGS & VITALS SUPABASE INTEGRATION
+// ==========================================
+
+/**
+ * Transforms client CareLog object into Supabase PostgreSQL row format
+ */
+export const careLogToSupabaseRow = (log: Partial<CareLog>) => {
+  const vitalsObj = log.vitals || {};
+  return {
+    ...(log.id ? { id: toValidUuid(log.id) } : {}),
+    resident_id: toValidUuid(log.residentId),
+    resident_full_name: log.residentFullName || 'Resident',
+    room_number: log.roomNumber || '101',
+    bed_number: log.bedNumber || 'Bed 01',
+    media_url: log.mediaUrl || vitalsObj.vitalsPhotoUrl || '',
+    media_type: log.mediaType || 'image',
+    thumbnail_url: log.thumbnailUrl || log.mediaUrl || '',
+    caregiver_id: log.caregiverId || 'user_care_1',
+    caregiver_name: log.caregiverName || 'Caregiver Staff',
+    ai_generated_family_summary: log.aiGeneratedFamilySummary || log.familyWarmUpdate || '',
+    family_warm_update: log.familyWarmUpdate || log.aiGeneratedFamilySummary || '',
+    clinical_staff_log: log.clinicalStaffLog || '',
+    key_highlights: log.keyHighlights || [],
+    meals: log.meals || { breakfast: '100%', lunch: '100%', dinner: '100%', hydrationMl: 800 },
+    mood: log.mood || 'calm',
+    vitals: vitalsObj,
+    activities: log.activities || ['Daily Care'],
+    caregiver_raw_notes: log.caregiverRawNotes || '',
+    timestamp: log.timestamp || new Date().toISOString(),
+    family_likes_count: log.familyLikesCount || 0,
+    family_comments_count: log.familyCommentsCount || 0,
+    flagged_for_admin_review: Boolean(log.flaggedForAdminReview),
+    approval_status: log.approvalStatus || 'approved',
+    approved_by_admin_name: log.approvedByAdminName || 'Clinical Staff',
+    approved_at: log.approvedAt || (log.approvalStatus === 'approved' ? new Date().toISOString() : null),
+    admin_review_notes: log.adminReviewNotes || '',
+  };
+};
+
+/**
+ * Transforms Supabase row into client CareLog interface
+ */
+export const supabaseRowToCareLog = (row: any): CareLog => {
+  return {
+    id: String(row.id),
+    residentId: String(row.resident_id || row.residentId || ''),
+    residentFullName: row.resident_full_name || row.residentFullName || 'Resident',
+    roomNumber: String(row.room_number || row.roomNumber || '101'),
+    bedNumber: row.bed_number || row.bedNumber || 'Bed 01',
+    mediaUrl: row.media_url || row.mediaUrl || row.vitals?.vitalsPhotoUrl || '',
+    mediaType: (row.media_type || row.mediaType || 'image') as 'image' | 'video',
+    thumbnailUrl: row.thumbnail_url || row.thumbnailUrl || row.media_url || '',
+    caregiverId: row.caregiver_id || row.caregiverId || 'user_care_1',
+    caregiverName: row.caregiver_name || row.caregiverName || 'Caregiver Staff',
+    aiGeneratedFamilySummary: row.ai_generated_family_summary || row.aiGeneratedFamilySummary || row.family_warm_update || '',
+    familyWarmUpdate: row.family_warm_update || row.familyWarmUpdate || row.ai_generated_family_summary || '',
+    clinicalStaffLog: row.clinical_staff_log || row.clinicalStaffLog || '',
+    keyHighlights: Array.isArray(row.key_highlights) ? row.key_highlights : (row.keyHighlights || []),
+    meals: row.meals || { breakfast: '100%', lunch: '100%', dinner: '100%', hydrationMl: 800 },
+    mood: row.mood || 'calm',
+    vitals: row.vitals || {},
+    activities: Array.isArray(row.activities) ? row.activities : (row.activities || ['Daily Care']),
+    caregiverRawNotes: row.caregiver_raw_notes || row.caregiverRawNotes || '',
+    timestamp: row.timestamp || row.created_at || new Date().toISOString(),
+    familyLikesCount: Number(row.family_likes_count || row.familyLikesCount || 0),
+    familyCommentsCount: Number(row.family_comments_count || row.familyCommentsCount || 0),
+    flaggedForAdminReview: Boolean(row.flagged_for_admin_review || row.flaggedForAdminReview || false),
+    approvalStatus: row.approval_status || row.approvalStatus || 'approved',
+    approvedByAdminName: row.approved_by_admin_name || row.approvedByAdminName,
+    approvedAt: row.approved_at || row.approvedAt,
+    adminReviewNotes: row.admin_review_notes || row.adminReviewNotes,
+  };
+};
+
+/**
+ * Transforms client MorningVitalsRecord object into Supabase PostgreSQL row format
+ */
+export const morningVitalsToSupabaseRow = (v: Partial<MorningVitalsRecord>) => {
+  return {
+    ...(v.id ? { id: toValidUuid(v.id) } : {}),
+    resident_id: toValidUuid(v.residentId),
+    resident_full_name: v.residentFullName || 'Resident',
+    room_number: v.roomNumber || '101',
+    bed_number: v.bedNumber || 'Bed 01',
+    caregiver_id: v.caregiverId || 'user_care_1',
+    caregiver_name: v.caregiverName || 'Caregiver Staff',
+    vitals_photo_url: v.vitalsPhotoUrl || '',
+    secondary_vitals_photo_url: v.secondaryVitalsPhotoUrl || null,
+    readings: v.readings || {},
+    device_type: v.deviceType || 'Vital Signs Monitor',
+    recorded_at: v.recordedAt || new Date().toISOString(),
+    formatted_time: v.formattedTime || '',
+    formatted_date: v.formattedDate || '',
+    is_before_7am: Boolean(v.isBefore7am),
+    notes: v.notes || '',
+    status: v.status || 'normal',
+    ai_extracted: Boolean(v.aiExtracted),
+  };
+};
+
+/**
+ * Transforms Supabase row into client MorningVitalsRecord interface
+ */
+export const supabaseRowToMorningVitals = (row: any): MorningVitalsRecord => {
+  return {
+    id: String(row.id),
+    residentId: String(row.resident_id || row.residentId || ''),
+    residentFullName: row.resident_full_name || row.residentFullName || 'Resident',
+    roomNumber: String(row.room_number || row.roomNumber || '101'),
+    bedNumber: row.bed_number || row.bedNumber || 'Bed 01',
+    caregiverId: row.caregiver_id || row.caregiverId || 'user_care_1',
+    caregiverName: row.caregiver_name || row.caregiverName || 'Caregiver Staff',
+    vitalsPhotoUrl: row.vitals_photo_url || row.vitalsPhotoUrl || '',
+    secondaryVitalsPhotoUrl: row.secondary_vitals_photo_url || row.secondaryVitalsPhotoUrl,
+    readings: row.readings || {},
+    deviceType: row.device_type || row.deviceType || 'Vital Signs Monitor',
+    recordedAt: row.recorded_at || row.recordedAt || new Date().toISOString(),
+    formattedTime: row.formatted_time || row.formattedTime || '',
+    formattedDate: row.formatted_date || row.formattedDate || '',
+    isBefore7am: Boolean(row.is_before_7am !== undefined ? row.is_before_7am : row.isBefore7am),
+    notes: row.notes || '',
+    status: row.status || 'normal',
+    aiExtracted: Boolean(row.ai_extracted || row.aiExtracted),
+  };
+};
+
+/**
+ * Helper to safely upsert care_logs into Supabase with automatic schema-cache column fallback
+ */
+export const safeUpsertCareLogsTable = async (
+  rows: any[],
+  maxRetries = 25
+): Promise<{ data: any; error: any }> => {
+  let currentRows = rows.map((r) => {
+    const clean: any = { ...r };
+    cachedMissingColumns.forEach((col) => {
+      delete clean[col];
+    });
+    return clean;
+  });
+
+  let attempt = 0;
+
+  while (attempt <= maxRetries) {
+    const { data, error } = await supabase
+      .from('care_logs')
+      .upsert(currentRows, { onConflict: 'id' })
+      .select();
+
+    if (!error) {
+      return { data, error: null };
+    }
+
+    const missingCol = extractMissingColumnFromError(error.message);
+    if (missingCol) {
+      cachedMissingColumns.add(missingCol);
+      console.warn(`[Supabase Auto-Heal] Column '${missingCol}' not found in care_logs schema. Stripping and retrying...`);
+      currentRows = currentRows.map((r) => {
+        const copy = { ...r };
+        delete copy[missingCol];
+        return copy;
+      });
+      attempt++;
+      continue;
+    }
+
+    return { data: null, error };
+  }
+
+  return { data: null, error: { message: 'Max schema retry attempts exceeded for care_logs' } };
+};
+
+/**
+ * Helper to safely upsert morning_vitals into Supabase with automatic schema-cache column fallback
+ */
+export const safeUpsertMorningVitalsTable = async (
+  rows: any[],
+  maxRetries = 25
+): Promise<{ data: any; error: any }> => {
+  let currentRows = rows.map((r) => {
+    const clean: any = { ...r };
+    cachedMissingColumns.forEach((col) => {
+      delete clean[col];
+    });
+    return clean;
+  });
+
+  let attempt = 0;
+
+  while (attempt <= maxRetries) {
+    const { data, error } = await supabase
+      .from('morning_vitals')
+      .upsert(currentRows, { onConflict: 'id' })
+      .select();
+
+    if (!error) {
+      return { data, error: null };
+    }
+
+    const missingCol = extractMissingColumnFromError(error.message);
+    if (missingCol) {
+      cachedMissingColumns.add(missingCol);
+      console.warn(`[Supabase Auto-Heal] Column '${missingCol}' not found in morning_vitals schema. Stripping and retrying...`);
+      currentRows = currentRows.map((r) => {
+        const copy = { ...r };
+        delete copy[missingCol];
+        return copy;
+      });
+      attempt++;
+      continue;
+    }
+
+    return { data: null, error };
+  }
+
+  return { data: null, error: { message: 'Max schema retry attempts exceeded for morning_vitals' } };
+};
+
+/**
+ * Sync a single CareLog to Supabase
+ */
+export const syncCareLogToSupabase = async (
+  log: CareLog
+): Promise<{ success: boolean; data?: any; error?: string }> => {
+  // First route through server backend
+  try {
+    const res = await fetch('/api/care-logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(log),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      return { success: true, data: created };
+    }
+  } catch (apiErr) {
+    console.warn('Backend care log save note:', apiErr);
+  }
+
+  // Direct client Supabase fallback
+  if (SUPABASE_URL && !SUPABASE_URL.includes('placeholder') && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('placeholder')) {
+    try {
+      const row = careLogToSupabaseRow(log);
+      const { data, error } = await safeUpsertCareLogsTable([row]);
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true, data };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Connection error' };
+    }
+  }
+
+  return { success: true, data: log };
+};
+
+/**
+ * Bulk sync all care logs to Supabase
+ */
+export const syncAllCareLogsToSupabase = async (
+  logs: CareLog[]
+): Promise<{ success: boolean; count: number; error?: string }> => {
+  try {
+    const res = await fetch('/api/care-logs/sync-supabase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ careLogs: logs }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        return { success: true, count: data.count || logs.length };
+      }
+    }
+  } catch (e) {
+    console.warn('Server sync care-logs note:', e);
+  }
+
+  if (SUPABASE_URL && !SUPABASE_URL.includes('placeholder') && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('placeholder')) {
+    try {
+      const rows = logs.map(careLogToSupabaseRow);
+      if (rows.length > 0) {
+        const { error } = await safeUpsertCareLogsTable(rows);
+        if (error) {
+          return { success: false, count: 0, error: error.message };
+        }
+      }
+      return { success: true, count: rows.length };
+    } catch (err: any) {
+      return { success: false, count: 0, error: err?.message || 'Connection error' };
+    }
+  }
+
+  return { success: true, count: logs.length };
+};
+
+/**
+ * Fetch care logs from Supabase
+ */
+export const fetchCareLogsFromSupabase = async (): Promise<{ success: boolean; careLogs: CareLog[]; error?: string }> => {
+  try {
+    const res = await fetch('/api/care-logs');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return { success: true, careLogs: data };
+      }
+    }
+  } catch (e) {
+    console.warn('Backend fetch care-logs note:', e);
+  }
+
+  if (SUPABASE_URL && !SUPABASE_URL.includes('placeholder') && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('placeholder')) {
+    try {
+      const { data, error } = await supabase
+        .from('care_logs')
+        .select('*')
+        .order('timestamp', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        const careLogs = data.map(supabaseRowToCareLog);
+        return { success: true, careLogs };
+      }
+    } catch (err: any) {
+      return { success: false, careLogs: [], error: err?.message || 'Connection error' };
+    }
+  }
+
+  return { success: false, careLogs: [], error: 'Unable to fetch care logs' };
+};
+
+/**
+ * Sync single morning vitals record to Supabase
+ */
+export const syncMorningVitalsToSupabase = async (
+  record: MorningVitalsRecord
+): Promise<{ success: boolean; data?: any; error?: string }> => {
+  try {
+    const res = await fetch('/api/vitals/morning-records', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      return { success: true, data: created };
+    }
+  } catch (apiErr) {
+    console.warn('Backend morning vitals save note:', apiErr);
+  }
+
+  if (SUPABASE_URL && !SUPABASE_URL.includes('placeholder') && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('placeholder')) {
+    try {
+      const row = morningVitalsToSupabaseRow(record);
+      const { data, error } = await safeUpsertMorningVitalsTable([row]);
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true, data };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Connection error' };
+    }
+  }
+
+  return { success: true, data: record };
+};
+

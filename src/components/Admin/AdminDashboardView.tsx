@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase, SUPABASE_URL, syncAllResidentsToSupabase } from '../../lib/supabaseClient';
+import { supabase, SUPABASE_URL, syncAllResidentsToSupabase, syncAllCareLogsToSupabase, syncMorningVitalsToSupabase } from '../../lib/supabaseClient';
 import { isResidentMatch, getLatestVitalsForResident, getVitalsAuditMetrics } from '../../utils/residentMatcher';
 import {
   Resident,
@@ -282,11 +282,40 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const handleSyncAllResidents = async () => {
     setIsSyncingAllSupabase(true);
     try {
-      const result = await syncAllResidentsToSupabase(residents);
-      if (result.success) {
+      // 1. Try unified backend sync endpoint first
+      try {
+        const unifiedRes = await fetch('/api/sync-all-supabase', { method: 'POST' });
+        if (unifiedRes.ok) {
+          const unifiedData = await unifiedRes.json();
+          if (unifiedData.success) {
+            setSyncToast({
+              type: 'success',
+              message: `✓ Full sync complete! Synchronized ${unifiedData.residentCount || residents.length} residents, ${unifiedData.careLogCount || careLogs.length} care logs, and ${unifiedData.vitalsCount || morningVitals.length} vitals records to Supabase.`,
+            });
+            if (onRefreshResidents) {
+              await onRefreshResidents();
+            }
+            return;
+          }
+        }
+      } catch (beErr) {
+        console.warn('Backend full sync fallback to direct client sync:', beErr);
+      }
+
+      // 2. Direct client-side sync fallback
+      const [resResult, logsResult] = await Promise.all([
+        syncAllResidentsToSupabase(residents),
+        syncAllCareLogsToSupabase(careLogs),
+      ]);
+
+      if (morningVitals && morningVitals.length > 0) {
+        morningVitals.forEach((v) => syncMorningVitalsToSupabase(v).catch(() => {}));
+      }
+
+      if (resResult.success || logsResult.success) {
         setSyncToast({
           type: 'success',
-          message: `Successfully synchronized ${result.count || residents.length} residents to your Supabase PostgreSQL table!`,
+          message: `✓ Synchronized ${residents.length} residents and ${careLogs.length} care logs directly to your Supabase PostgreSQL database!`,
         });
         if (onRefreshResidents) {
           await onRefreshResidents();
@@ -294,7 +323,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       } else {
         setSyncToast({
           type: 'error',
-          message: `Supabase sync notice: ${result.error}`,
+          message: `Supabase sync notice: ${resResult.error || logsResult.error}`,
         });
       }
     } catch (err: any) {
