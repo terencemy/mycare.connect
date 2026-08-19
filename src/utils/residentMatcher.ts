@@ -267,3 +267,52 @@ export function getVitalsAuditMetrics(
     photoCompliancePercentage,
   };
 }
+
+/**
+ * Resiliently deduplicates care logs by exact ID, UUID normalization,
+ * and content signature (resident + timestamp minute + narrative/media)
+ * to prevent duplicate feed cards in Family Portal and Caregiver views.
+ */
+export function deduplicateCareLogs(logs: CareLog[]): CareLog[] {
+  if (!Array.isArray(logs)) return [];
+
+  const seenIds = new Set<string>();
+  const seenSignatures = new Set<string>();
+  const unique: CareLog[] = [];
+
+  for (const log of logs) {
+    if (!log || !log.id) continue;
+
+    const rawId = String(log.id).trim();
+    const uuidId = toValidUuid(rawId);
+
+    if (seenIds.has(rawId) || seenIds.has(uuidId)) {
+      continue;
+    }
+
+    // Content signature: resident identifier + timestamp minute (YYYY-MM-DDTHH:MM) + snippet
+    const resKey = toValidUuid(log.residentId || log.residentFullName || '');
+    const dateMinute = log.timestamp ? log.timestamp.slice(0, 16) : '';
+    const narrativeSnippet = (log.aiGeneratedFamilySummary || log.familyWarmUpdate || log.clinicalStaffLog || '')
+      .slice(0, 40)
+      .trim()
+      .toLowerCase();
+    const mediaKey = (log.mediaUrl || log.vitals?.vitalsPhotoUrl || '').trim();
+    const signature = `${resKey}_${dateMinute}_${narrativeSnippet || mediaKey}`;
+
+    if (signature.length > 10 && seenSignatures.has(signature)) {
+      continue;
+    }
+
+    seenIds.add(rawId);
+    seenIds.add(uuidId);
+    if (signature.length > 10) {
+      seenSignatures.add(signature);
+    }
+    unique.push(log);
+  }
+
+  return unique.sort(
+    (a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
+  );
+}

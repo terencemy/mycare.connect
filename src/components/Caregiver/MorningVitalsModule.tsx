@@ -593,10 +593,9 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                         </span>
                       ) : (
                         <span
-                          title="Pending Daily Check"
-                          className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]"
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#FAF9F6] text-[#7C7C6D] border border-[#E6E2D3]"
                         >
-                          Pending
+                          Due
                         </span>
                       )}
                     </div>

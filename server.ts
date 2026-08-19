@@ -272,18 +272,75 @@ async function safeUpsertResidentsServer(rows: any[]): Promise<{ data: any; erro
   return { data: null, error: { message: 'Max schema retry attempts reached' } };
 }
 
+// Helper: Resiliently deduplicate an array of CareLog objects by ID, UUID, and content signature
+function deduplicateCareLogsList(logs: CareLog[]): CareLog[] {
+  if (!Array.isArray(logs)) return [];
+  const seenIds = new Set<string>();
+  const seenSignatures = new Set<string>();
+  const unique: CareLog[] = [];
+
+  for (const log of logs) {
+    if (!log || !log.id) continue;
+
+    const rawId = String(log.id).trim();
+    const uuidId = toValidUuid(rawId);
+
+    if (seenIds.has(rawId) || seenIds.has(uuidId)) {
+      continue;
+    }
+
+    const resKey = toValidUuid(log.residentId || log.residentFullName || '');
+    const dateMinute = log.timestamp ? log.timestamp.slice(0, 16) : '';
+    const narrativeSnippet = (log.aiGeneratedFamilySummary || log.familyWarmUpdate || log.clinicalStaffLog || '')
+      .slice(0, 40)
+      .trim()
+      .toLowerCase();
+    const mediaKey = (log.mediaUrl || log.vitals?.vitalsPhotoUrl || '').trim();
+    const signature = `${resKey}_${dateMinute}_${narrativeSnippet || mediaKey}`;
+
+    if (signature.length > 10 && seenSignatures.has(signature)) {
+      continue;
+    }
+
+    seenIds.add(rawId);
+    seenIds.add(uuidId);
+    if (signature.length > 10) {
+      seenSignatures.add(signature);
+    }
+    unique.push(log);
+  }
+
+  return unique.sort(
+    (a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
+  );
+}
+
 // Helper: Convert CareLog object to Supabase column format
 function careLogToDbRow(log: Partial<CareLog>) {
   const vitalsObj = log.vitals || {};
+
+  // Resiliently resolve resident to ensure valid Supabase foreign key link
+  const matchingRes = residents.find((r) =>
+    r.id === log.residentId ||
+    toValidUuid(r.id) === toValidUuid(log.residentId) ||
+    (log.residentFullName && r.fullName.trim().toLowerCase() === log.residentFullName.trim().toLowerCase()) ||
+    (r.roomNumber === log.roomNumber && r.bedNumber === log.bedNumber)
+  );
+
+  const effectiveResidentId = matchingRes ? matchingRes.id : (log.residentId || '');
+  const effectiveFullName = matchingRes ? matchingRes.fullName : (log.residentFullName || 'Resident');
+  const effectiveRoom = matchingRes ? matchingRes.roomNumber : (log.roomNumber || '101');
+  const effectiveBed = matchingRes ? matchingRes.bedNumber : (log.bedNumber || 'Bed 01');
+
   return {
     ...(log.id ? { id: toValidUuid(log.id) } : {}),
-    resident_id: toValidUuid(log.residentId),
-    resident_full_name: log.residentFullName || 'Resident',
-    room_number: log.roomNumber || '101',
-    bed_number: log.bedNumber || 'Bed 01',
+    resident_id: toValidUuid(effectiveResidentId),
+    resident_full_name: effectiveFullName,
+    room_number: effectiveRoom,
+    bed_number: effectiveBed,
     media_url: log.mediaUrl || vitalsObj.vitalsPhotoUrl || '',
     media_type: log.mediaType || 'image',
-    thumbnail_url: log.thumbnailUrl || log.mediaUrl || '',
+    thumbnail_url: log.thumbnailUrl || log.mediaUrl || vitalsObj.vitalsPhotoUrl || '',
     caregiver_id: log.caregiverId || 'user_care_1',
     caregiver_name: log.caregiverName || 'Caregiver Staff',
     ai_generated_family_summary: log.aiGeneratedFamilySummary || log.familyWarmUpdate || '',
@@ -341,12 +398,24 @@ function dbRowToCareLog(row: any): CareLog {
 
 // Helper: Convert MorningVitalsRecord to Supabase column format
 function morningVitalsToDbRow(v: Partial<MorningVitalsRecord>) {
+  const matchingRes = residents.find((r) =>
+    r.id === v.residentId ||
+    toValidUuid(r.id) === toValidUuid(v.residentId) ||
+    (v.residentFullName && r.fullName.trim().toLowerCase() === v.residentFullName.trim().toLowerCase()) ||
+    (r.roomNumber === v.roomNumber && r.bedNumber === v.bedNumber)
+  );
+
+  const effectiveResidentId = matchingRes ? matchingRes.id : (v.residentId || '');
+  const effectiveFullName = matchingRes ? matchingRes.fullName : (v.residentFullName || 'Resident');
+  const effectiveRoom = matchingRes ? matchingRes.roomNumber : (v.roomNumber || '101');
+  const effectiveBed = matchingRes ? matchingRes.bedNumber : (v.bedNumber || 'Bed 01');
+
   return {
     ...(v.id ? { id: toValidUuid(v.id) } : {}),
-    resident_id: toValidUuid(v.residentId),
-    resident_full_name: v.residentFullName || 'Resident',
-    room_number: v.roomNumber || '101',
-    bed_number: v.bedNumber || 'Bed 01',
+    resident_id: toValidUuid(effectiveResidentId),
+    resident_full_name: effectiveFullName,
+    room_number: effectiveRoom,
+    bed_number: effectiveBed,
     caregiver_id: v.caregiverId || 'user_care_1',
     caregiver_name: v.caregiverName || 'Caregiver Staff',
     vitals_photo_url: v.vitalsPhotoUrl || '',
@@ -370,6 +439,15 @@ async function safeUpsertCareLogsServer(rows: any[]): Promise<{ data: any; error
     return { data: null, error: { message: 'Supabase credentials not configured' } };
   }
 
+  // Ensure parent residents exist in Supabase first to satisfy foreign key constraints
+  if (residents.length > 0) {
+    try {
+      await safeUpsertResidentsServer(residents.map(residentToDbRow));
+    } catch (preErr) {
+      console.warn('Pre-sync residents for care_logs notice:', preErr);
+    }
+  }
+
   let currentRows = rows.map((r) => {
     const copy: any = { ...r };
     cachedMissingColumnsServer.forEach((col) => {
@@ -387,6 +465,18 @@ async function safeUpsertCareLogsServer(rows: any[]): Promise<{ data: any; error
 
     if (!error) {
       return { data, error: null };
+    }
+
+    // Auto-heal foreign key issues by ensuring residents table is up to date
+    if (error.code === '23503' || error.message.includes('foreign key') || error.message.includes('violates foreign key constraint')) {
+      console.warn('[Supabase Server Auto-Heal care_logs] Foreign key constraint notice. Syncing residents and retrying...');
+      try {
+        await safeUpsertResidentsServer(residents.map(residentToDbRow));
+      } catch (fkErr) {
+        console.warn('FK recovery resident sync note:', fkErr);
+      }
+      attempt++;
+      continue;
     }
 
     const missingCol = extractMissingColumnServer(error.message);
@@ -415,6 +505,15 @@ async function safeUpsertMorningVitalsServer(rows: any[]): Promise<{ data: any; 
     return { data: null, error: { message: 'Supabase credentials not configured' } };
   }
 
+  // Ensure parent residents exist in Supabase first
+  if (residents.length > 0) {
+    try {
+      await safeUpsertResidentsServer(residents.map(residentToDbRow));
+    } catch (preErr) {
+      console.warn('Pre-sync residents for morning_vitals notice:', preErr);
+    }
+  }
+
   let currentRows = rows.map((r) => {
     const copy: any = { ...r };
     cachedMissingColumnsServer.forEach((col) => {
@@ -432,6 +531,17 @@ async function safeUpsertMorningVitalsServer(rows: any[]): Promise<{ data: any; 
 
     if (!error) {
       return { data, error: null };
+    }
+
+    if (error.code === '23503' || error.message.includes('foreign key') || error.message.includes('violates foreign key constraint')) {
+      console.warn('[Supabase Server Auto-Heal morning_vitals] Foreign key constraint notice. Syncing residents and retrying...');
+      try {
+        await safeUpsertResidentsServer(residents.map(residentToDbRow));
+      } catch (fkErr) {
+        console.warn('FK recovery resident sync note:', fkErr);
+      }
+      attempt++;
+      continue;
     }
 
     const missingCol = extractMissingColumnServer(error.message);
@@ -496,14 +606,23 @@ function syncVitalsToCareLog(vitalRecord: MorningVitalsRecord): CareLog {
   };
 
   const recordDate = vitalRecord.recordedAt ? vitalRecord.recordedAt.split('T')[0] : new Date().toISOString().split('T')[0];
+  const targetUuid = toValidUuid(vitalRecord.residentId);
 
   // Look for existing care log for this resident and date to update or create
   const existingLogIndex = careLogs.findIndex((log) => {
-    const isMatchingResident = log.residentId === vitalRecord.residentId ||
-      (log.residentFullName && log.residentFullName === vitalRecord.residentFullName) ||
+    const isMatchingResident =
+      log.residentId === vitalRecord.residentId ||
+      toValidUuid(log.residentId) === targetUuid ||
+      (log.residentFullName && log.residentFullName.trim().toLowerCase() === (vitalRecord.residentFullName || '').trim().toLowerCase()) ||
       (log.roomNumber === vitalRecord.roomNumber && log.bedNumber === vitalRecord.bedNumber);
-    const isMatchingDate = log.timestamp && log.timestamp.split('T')[0] === recordDate;
-    const isVitalsLog = Boolean(log.vitals?.bloodPressure || log.vitals?.vitalsPhotoUrl || (log.clinicalStaffLog && log.clinicalStaffLog.includes('Vital Signs')));
+    const logDate = log.timestamp ? log.timestamp.split('T')[0] : '';
+    const isMatchingDate = logDate === recordDate;
+    const isVitalsLog = Boolean(
+      log.id.startsWith('log_vtl_') ||
+      log.vitals?.bloodPressure ||
+      log.vitals?.vitalsPhotoUrl ||
+      (log.clinicalStaffLog && log.clinicalStaffLog.includes('Vital Signs'))
+    );
     return isMatchingResident && (isVitalsLog || isMatchingDate);
   });
 
@@ -517,6 +636,7 @@ function syncVitalsToCareLog(vitalRecord: MorningVitalsRecord): CareLog {
     syncedLog = {
       ...careLogs[existingLogIndex],
       mediaUrl: vitalRecord.vitalsPhotoUrl || careLogs[existingLogIndex].mediaUrl,
+      thumbnailUrl: vitalRecord.vitalsPhotoUrl || careLogs[existingLogIndex].thumbnailUrl || careLogs[existingLogIndex].mediaUrl,
       caregiverId: vitalRecord.caregiverId || careLogs[existingLogIndex].caregiverId,
       caregiverName: vitalRecord.caregiverName || careLogs[existingLogIndex].caregiverName,
       vitals: {
@@ -534,14 +654,16 @@ function syncVitalsToCareLog(vitalRecord: MorningVitalsRecord): CareLog {
     };
     careLogs[existingLogIndex] = syncedLog;
   } else {
+    const deterministicId = `log_vtl_${targetUuid}_${recordDate.replace(/-/g, '')}`;
     syncedLog = {
-      id: `log_vtl_${vitalRecord.id || Date.now()}`,
+      id: deterministicId,
       residentId: vitalRecord.residentId,
       residentFullName: vitalRecord.residentFullName,
       roomNumber: vitalRecord.roomNumber,
       bedNumber: vitalRecord.bedNumber,
       mediaUrl: vitalRecord.vitalsPhotoUrl || 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&auto=format&fit=crop&q=80',
       mediaType: 'image',
+      thumbnailUrl: vitalRecord.vitalsPhotoUrl || 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&auto=format&fit=crop&q=80',
       caregiverId: vitalRecord.caregiverId || 'user_care_1',
       caregiverName: vitalRecord.caregiverName || 'Nurse Sarah Jenkins',
       aiGeneratedFamilySummary: familyWarmSummary,
@@ -566,15 +688,24 @@ function syncVitalsToCareLog(vitalRecord: MorningVitalsRecord): CareLog {
       approvedByAdminName: vitalRecord.caregiverName || 'Clinical Staff',
       approvedAt: vitalRecord.recordedAt || new Date().toISOString(),
     };
-    careLogs.unshift(syncedLog);
+
+    const matchById = careLogs.findIndex((l) => l.id === deterministicId || toValidUuid(l.id) === toValidUuid(deterministicId));
+    if (matchById >= 0) {
+      careLogs[matchById] = syncedLog;
+    } else {
+      careLogs.unshift(syncedLog);
+    }
   }
+
+  // Deduplicate entire collection to prevent duplicate feed entries
+  careLogs = deduplicateCareLogsList(careLogs);
 
   // Asynchronously sync to Supabase in background
   safeUpsertCareLogsServer([careLogToDbRow(syncedLog)]).catch((err) => {
-    console.warn('[Sync Error] Care log Supabase auto-sync notice:', err?.message);
+    console.warn('[Sync Notice] Care log Supabase auto-sync:', err?.message);
   });
   safeUpsertMorningVitalsServer([morningVitalsToDbRow(vitalRecord)]).catch((err) => {
-    console.warn('[Sync Error] Morning vitals Supabase auto-sync notice:', err?.message);
+    console.warn('[Sync Notice] Morning vitals Supabase auto-sync:', err?.message);
   });
 
   return syncedLog;
@@ -583,6 +714,36 @@ function syncVitalsToCareLog(vitalRecord: MorningVitalsRecord): CareLog {
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
+
+  // Background hydration from Supabase if configured
+  (async () => {
+    const client = getSupabaseServerClient();
+    if (client) {
+      try {
+        console.log('[Supabase] Initializing connection and checking remote care records...');
+        const { data: remoteLogs } = await client.from('care_logs').select('*').order('timestamp', { ascending: false });
+        if (Array.isArray(remoteLogs) && remoteLogs.length > 0) {
+          const mapped = remoteLogs.map(dbRowToCareLog);
+          careLogs = deduplicateCareLogsList([...mapped, ...careLogs]);
+          console.log(`[Supabase] Hydrated ${mapped.length} care logs from Supabase.`);
+        } else if (careLogs.length > 0) {
+          // Supabase is empty or brand new, seed existing memory records
+          console.log('[Supabase] Seeding initial care logs to Supabase...');
+          await safeUpsertCareLogsServer(careLogs.map(careLogToDbRow));
+        }
+
+        const { data: remoteVitals } = await client.from('morning_vitals').select('*').order('recorded_at', { ascending: false });
+        if (Array.isArray(remoteVitals) && remoteVitals.length > 0) {
+          console.log(`[Supabase] Found ${remoteVitals.length} morning vitals records.`);
+        } else if (morningVitals.length > 0) {
+          console.log('[Supabase] Seeding initial morning vitals to Supabase...');
+          await safeUpsertMorningVitalsServer(morningVitals.map(morningVitalsToDbRow));
+        }
+      } catch (hydrateErr: any) {
+        console.warn('[Supabase Hydration Notice]:', hydrateErr?.message || hydrateErr);
+      }
+    }
+  })();
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -1181,11 +1342,33 @@ async function startServer() {
   });
 
   // Care Logs Endpoints
-  app.get('/api/care-logs', (req, res) => {
+  app.get('/api/care-logs', async (req, res) => {
     const { residentId, status } = req.query;
-    let results = [...careLogs];
+
+    const client = getSupabaseServerClient();
+    if (client) {
+      try {
+        const { data: dbLogs, error } = await client
+          .from('care_logs')
+          .select('*')
+          .order('timestamp', { ascending: false });
+
+        if (!error && Array.isArray(dbLogs) && dbLogs.length > 0) {
+          const mappedLogs = dbLogs.map(dbRowToCareLog);
+          careLogs = deduplicateCareLogsList([...mappedLogs, ...careLogs]);
+        }
+      } catch (dbErr) {
+        console.warn('Supabase fetch care_logs note:', dbErr);
+      }
+    }
+
+    let results = deduplicateCareLogsList(careLogs);
     if (residentId) {
-      results = results.filter((log) => log.residentId === residentId);
+      const targetUuid = toValidUuid(String(residentId));
+      results = results.filter((log) => 
+        log.residentId === residentId || 
+        toValidUuid(log.residentId) === targetUuid
+      );
     }
     if (status) {
       results = results.filter((log) => log.approvalStatus === status);
@@ -1193,7 +1376,7 @@ async function startServer() {
     res.json(results);
   });
 
-  app.post('/api/care-logs', (req, res) => {
+  app.post('/api/care-logs', async (req, res) => {
     const newLog: CareLog = {
       id: req.body.id || `log_${Date.now()}`,
       timestamp: req.body.timestamp || new Date().toISOString(),
@@ -1203,7 +1386,9 @@ async function startServer() {
       approvalStatus: req.body.approvalStatus || 'approved',
       ...req.body,
     };
-    careLogs.unshift(newLog);
+    
+    // Deduplicate before adding
+    careLogs = deduplicateCareLogsList([newLog, ...careLogs]);
 
     // Asynchronously upsert to Supabase
     safeUpsertCareLogsServer([careLogToDbRow(newLog)]).catch((err) => {
@@ -1218,15 +1403,7 @@ async function startServer() {
     try {
       const incomingLogs: CareLog[] = req.body.careLogs || careLogs;
       if (Array.isArray(req.body.careLogs)) {
-        // Merge incoming into in-memory
-        req.body.careLogs.forEach((inc: CareLog) => {
-          const idx = careLogs.findIndex((l) => l.id === inc.id);
-          if (idx >= 0) {
-            careLogs[idx] = { ...careLogs[idx], ...inc };
-          } else {
-            careLogs.unshift(inc);
-          }
-        });
+        careLogs = deduplicateCareLogsList([...req.body.careLogs, ...careLogs]);
       }
 
       const rows = incomingLogs.map(careLogToDbRow);

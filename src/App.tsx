@@ -24,6 +24,7 @@ import {
   toValidUuid,
   generateUuid,
 } from './lib/supabaseClient';
+import { deduplicateCareLogs } from './utils/residentMatcher';
 
 export default function App() {
   const [users, setUsers] = useState<UserProfile[]>(() => {
@@ -169,7 +170,7 @@ export default function App() {
         if (logsRes.ok) {
           const logsData = await logsRes.json();
           if (Array.isArray(logsData)) {
-            setCareLogs(logsData);
+            setCareLogs(deduplicateCareLogs(logsData));
           }
         }
         if (msgRes.ok) {
@@ -248,17 +249,17 @@ export default function App() {
 
         // CRITICAL SYNC: Update careLogs state with the backend-synced care log
         if (Array.isArray(data.careLogs)) {
-          setCareLogs(data.careLogs);
+          setCareLogs(deduplicateCareLogs(data.careLogs));
         } else if (data.syncedCareLog) {
           const synced: CareLog = data.syncedCareLog;
           setCareLogs((prev) => {
-            const idx = prev.findIndex((l) => l.id === synced.id);
+            const idx = prev.findIndex((l) => l.id === synced.id || toValidUuid(l.id) === toValidUuid(synced.id));
             if (idx >= 0) {
               const updated = [...prev];
               updated[idx] = synced;
-              return updated;
+              return deduplicateCareLogs(updated);
             }
-            return [synced, ...prev];
+            return deduplicateCareLogs([synced, ...prev]);
           });
         }
 
@@ -352,7 +353,7 @@ export default function App() {
           approvedAt: fallback.recordedAt,
         };
 
-        setCareLogs((prev) => [fallbackLog, ...prev]);
+        setCareLogs((prev) => deduplicateCareLogs([fallbackLog, ...prev]));
         syncCareLogToSupabase(fallbackLog).catch(() => {});
       }
     } catch (err) {
@@ -376,7 +377,7 @@ export default function App() {
 
       if (response.ok) {
         const created: CareLog = await response.json();
-        setCareLogs((prev) => [created, ...prev]);
+        setCareLogs((prev) => deduplicateCareLogs([created, ...prev]));
         syncCareLogToSupabase(created).catch(() => {});
       } else {
         // Fallback local update
@@ -389,7 +390,7 @@ export default function App() {
           approvalStatus: 'approved',
           ...(newLogData as CareLog),
         };
-        setCareLogs((prev) => [fallback, ...prev]);
+        setCareLogs((prev) => deduplicateCareLogs([fallback, ...prev]));
         syncCareLogToSupabase(fallback).catch(() => {});
       }
     } catch (err) {

@@ -27,7 +27,7 @@ import {
   Check,
   Thermometer,
 } from 'lucide-react';
-import { isResidentMatch, getLatestVitalsForResident } from '../../utils/residentMatcher';
+import { isResidentMatch, getLatestVitalsForResident, deduplicateCareLogs } from '../../utils/residentMatcher';
 
 interface FamilyPortalViewProps {
   currentFamilyUser: UserProfile;
@@ -64,8 +64,14 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
   const activeResident =
     residents.find((r) => isResidentMatch(r, selectedResidentId)) || defaultResident;
 
-  // Filter logs & messages for active resident with resilient matching (Only approved logs are visible to family)
-  const residentLogs = careLogs.filter((l) => isResidentMatch(activeResident, l) && l.approvalStatus === 'approved');
+  // Filter logs & messages for active resident with resilient matching and guaranteed deduplication (Only approved logs are visible to family)
+  const residentLogs = React.useMemo(() => {
+    const rawMatches = careLogs.filter(
+      (l) => isResidentMatch(activeResident, l) && l.approvalStatus === 'approved'
+    );
+    return deduplicateCareLogs(rawMatches);
+  }, [careLogs, activeResident]);
+
   const residentMessages = familyMessages.filter((m) => isResidentMatch(activeResident, m));
 
   // Consolidate latest verified morning vitals from Morning Rounds and Care Logs
