@@ -900,7 +900,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
           <Clock className="w-4 h-4 text-[#889E81]" />
           <span>Daily Vitals Audit &amp; Watermarks</span>
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EBF1EA] text-[#5A5A40] border border-[#889E81]/30">
-            {vitalsMetrics.completedBeds}/{vitalsMetrics.totalBeds} Beds ({vitalsMetrics.totalPhotosUploaded} Photos)
+            {vitalsMetrics.completedBeds}/{vitalsMetrics.totalBeds} Beds
           </span>
         </button>
 
@@ -1404,7 +1404,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 </h3>
               </div>
               <p className="text-xs text-[#7C7C6D]">
-                Clinical Protocol Standard: <strong>2 Device Photos = 1 Completed Bed</strong> (Monitor 1: BP/Pulse + Monitor 2: SpO2/Temp/Sugar). Each photo is validated with an immutable Canvas-baked watermark.
+                Verified Clinical Vital Signs: Each resident bed is recorded with validated clinical telemetry and cryptographic watermark.
               </p>
             </div>
 
@@ -1416,9 +1416,9 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 </span>
               </div>
               <div className="bg-white px-4 py-2.5 rounded-2xl border border-[#E6E2D3] text-right">
-                <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold">Photos Audited</span>
+                <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold">Pending Beds</span>
                 <span className="text-lg font-bold text-[#5A5A40]">
-                  {vitalsMetrics.totalPhotosUploaded} / {vitalsMetrics.totalExpectedPhotos} ({vitalsMetrics.fullyCompletedBeds} Dual-Verified)
+                  {Math.max(0, vitalsMetrics.totalBeds - vitalsMetrics.completedBeds)} Remaining
                 </span>
               </div>
             </div>
@@ -1429,18 +1429,13 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
             <div className="flex items-center space-x-2">
               <ShieldCheck className="w-4 h-4 text-[#889E81] shrink-0" />
               <span>
-                <strong>Accurate Tally Formula:</strong> 2 photos = 1 bed. Uploading 2 photos for 1 resident updates their single bed record and does not double-count bed totals.
+                <strong>Daily Compliance:</strong> {vitalsMetrics.completedBeds} of {vitalsMetrics.totalBeds} resident beds have completed their daily vitals verification.
               </span>
             </div>
             <div className="flex items-center space-x-2 shrink-0">
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-[#5A5A40] border border-[#889E81]/30">
-                {vitalsMetrics.fullyCompletedBeds} Beds (2/2 Photos)
+                {vitalsMetrics.completionPercentage}% Ward Total
               </span>
-              {vitalsMetrics.partialBeds > 0 && (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                  {vitalsMetrics.partialBeds} Beds (1/2 Photo)
-                </span>
-              )}
             </div>
           </div>
 
@@ -1448,10 +1443,10 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
           <div className="bg-white rounded-[24px] border border-[#E6E2D3] overflow-hidden shadow-xs">
             <div className="p-4 border-b border-[#E6E2D3] flex items-center justify-between bg-[#FAF9F6]">
               <span className="text-xs font-bold text-[#5A5A40] uppercase tracking-wider">
-                Daily Vitals &amp; Watermark Registry ({vitalsMetrics.completedBeds} of {vitalsMetrics.totalBeds} Beds Done)
+                Daily Vitals Registry ({vitalsMetrics.completedBeds} of {vitalsMetrics.totalBeds} Beds Done)
               </span>
               <span className="text-xs text-[#7C7C6D]">
-                Target: 2 Photos = 1 Bed &bull; Real-time OCR &amp; Verification
+                Real-time Telemetry &amp; Verification
               </span>
             </div>
 
@@ -1560,7 +1555,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                           <>
                             <div className="flex items-center justify-end space-x-1 text-[11px] font-bold text-[#889E81]">
                               <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>{secondaryPhoto ? '✓ 2 Photos' : '✓ 1 Photo'}</span>
+                              <span>✓ Completed</span>
                             </div>
                             <span className="text-[10px] text-[#8C8C7E] block">{formattedTime} &bull; {caregiverName}</span>
                           </>

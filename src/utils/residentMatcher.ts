@@ -161,23 +161,23 @@ export function getLatestVitalsForResident(
   const morningTimestamp = latestMorning ? new Date(latestMorning.recordedAt || 0).getTime() : 0;
   const logTimestamp = latestLog ? new Date(latestLog.timestamp || 0).getTime() : 0;
 
-  // If Morning Round record is newer or equal
-  if (latestMorning && morningTimestamp >= logTimestamp) {
+  // If Morning Round record exists
+  if (latestMorning && (morningTimestamp >= logTimestamp || !latestLog?.vitals?.vitalsPhotoUrl)) {
     const readings = latestMorning.readings || {};
     return {
-      bloodPressure: readings.bloodPressure,
-      pulseRate: readings.pulseRate,
-      temperature: readings.temperature,
-      spo2: readings.spo2,
-      bloodSugar: readings.bloodSugar,
+      bloodPressure: readings.bloodPressure || latestLog?.vitals?.bloodPressure,
+      pulseRate: readings.pulseRate ?? latestLog?.vitals?.pulseRate,
+      temperature: readings.temperature ?? latestLog?.vitals?.temperature,
+      spo2: readings.spo2 ?? latestLog?.vitals?.spo2,
+      bloodSugar: readings.bloodSugar ?? latestLog?.vitals?.bloodSugar,
       deviceType: latestMorning.deviceType || 'Digital Spot Monitor',
-      photoUrl: latestMorning.vitalsPhotoUrl,
-      secondaryPhotoUrl: latestMorning.secondaryVitalsPhotoUrl,
-      caregiverName: latestMorning.caregiverName || resident.assignedCaregiverName || 'Care Staff',
+      photoUrl: latestMorning.vitalsPhotoUrl || latestLog?.vitals?.vitalsPhotoUrl || latestLog?.mediaUrl,
+      secondaryPhotoUrl: latestMorning.secondaryVitalsPhotoUrl || latestLog?.vitals?.secondaryVitalsPhotoUrl,
+      caregiverName: latestMorning.caregiverName || latestLog?.caregiverName || resident.assignedCaregiverName || 'Care Staff',
       formattedTime: latestMorning.formattedTime || new Date(latestMorning.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       formattedDate: latestMorning.formattedDate || new Date(latestMorning.recordedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
       isBefore7am: latestMorning.isBefore7am ?? true,
-      notes: latestMorning.notes,
+      notes: latestMorning.notes || latestLog?.caregiverRawNotes,
       status: latestMorning.status || 'normal',
       source: 'morning_round',
       timestamp: latestMorning.recordedAt,
@@ -191,19 +191,19 @@ export function getLatestVitalsForResident(
     const lv = latestLog.vitals;
     const logDate = new Date(latestLog.timestamp);
     return {
-      bloodPressure: lv.bloodPressure,
-      pulseRate: lv.pulseRate,
-      temperature: lv.temperature,
-      spo2: lv.spo2,
-      bloodSugar: lv.bloodSugar,
+      bloodPressure: lv.bloodPressure || latestMorning?.readings?.bloodPressure,
+      pulseRate: lv.pulseRate ?? latestMorning?.readings?.pulseRate,
+      temperature: lv.temperature ?? latestMorning?.readings?.temperature,
+      spo2: lv.spo2 ?? latestMorning?.readings?.spo2,
+      bloodSugar: lv.bloodSugar ?? latestMorning?.readings?.bloodSugar,
       deviceType: lv.deviceType || 'Caregiver Shift Assessment',
-      photoUrl: lv.vitalsPhotoUrl || latestLog.mediaUrl,
-      secondaryPhotoUrl: lv.secondaryVitalsPhotoUrl,
-      caregiverName: latestLog.caregiverName || resident.assignedCaregiverName || 'Care Staff',
+      photoUrl: lv.vitalsPhotoUrl || latestMorning?.vitalsPhotoUrl || latestLog.mediaUrl,
+      secondaryPhotoUrl: lv.secondaryVitalsPhotoUrl || latestMorning?.secondaryVitalsPhotoUrl,
+      caregiverName: latestLog.caregiverName || latestMorning?.caregiverName || resident.assignedCaregiverName || 'Care Staff',
       formattedTime: logDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
       formattedDate: logDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       isBefore7am: lv.isBefore7am ?? (logDate.getHours() < 7),
-      notes: latestLog.caregiverRawNotes || 'Shift vitals recorded in daily care log.',
+      notes: latestLog.caregiverRawNotes || latestMorning?.notes || 'Shift vitals recorded in daily care log.',
       status: 'normal',
       source: 'care_log',
       timestamp: latestLog.timestamp,

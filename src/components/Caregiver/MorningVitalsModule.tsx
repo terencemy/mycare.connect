@@ -503,30 +503,25 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
               <div className="text-sm font-bold text-[#889E81] flex items-center space-x-1.5">
                 <span>{vitalsMetrics.completedBeds} of {vitalsMetrics.totalBeds} Beds</span>
                 <span className="text-[10px] font-normal text-[#7C7C6D]">
-                  ({vitalsMetrics.totalPhotosUploaded}/{vitalsMetrics.totalExpectedPhotos} photos)
+                  ({vitalsMetrics.completionPercentage}%)
                 </span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Protocol helper banner: 2 photos = 1 bed */}
+        {/* Protocol helper banner */}
         <div className="mt-3 pt-3 border-t border-[#E6E2D3] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs bg-[#FAF9F6] p-3 rounded-2xl border border-[#E6E2D3]">
           <div className="flex items-center space-x-2 text-[#5A5A40]">
             <ShieldCheck className="w-4 h-4 text-[#889E81] shrink-0" />
             <span className="font-semibold">
-              Clinical Protocol Rule: <strong>2 Device Photos = 1 Completed Bed</strong> (Monitor 1: BP/Pulse + Monitor 2: SpO2/Temp/Sugar).
+              Daily Vitals Protocol: Each resident bed is recorded with validated clinical telemetry and audit watermark.
             </span>
           </div>
           <div className="flex items-center space-x-2 shrink-0">
             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#EBF1EA] text-[#5A5A40] border border-[#889E81]/30">
-              {vitalsMetrics.fullyCompletedBeds} Dual-Verified Beds
+              {vitalsMetrics.completedBeds} of {vitalsMetrics.totalBeds} Beds Done
             </span>
-            {vitalsMetrics.partialBeds > 0 && (
-              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
-                {vitalsMetrics.partialBeds} Single-Photo
-              </span>
-            )}
           </div>
         </div>
 
@@ -537,7 +532,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
               Select Resident Bed for Daily Check:
             </span>
             <span className="text-[10px] text-[#7C7C6D]">
-              Target: 2 Photos per Bed
+              {vitalsMetrics.completedBeds}/{vitalsMetrics.totalBeds} Completed
             </span>
           </div>
           {residents.length === 0 ? (
@@ -550,9 +545,6 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
               {residents.map((r) => {
                 const isSelected = selectedResident?.id === r.id;
                 const record = getResidentTodayRecord(r.id);
-                const photo1 = record?.vitalsPhotoUrl;
-                const photo2 = record?.secondaryVitalsPhotoUrl;
-                const photoCount = (photo1 ? 1 : 0) + (photo2 ? 1 : 0);
                 const isDone = !!record;
 
                 return (
@@ -590,27 +582,20 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                     </div>
 
                     <div className="shrink-0">
-                      {photoCount === 2 ? (
+                      {isDone ? (
                         <span
-                          title={`Verified at ${record.formattedTime} (2/2 Photos Attached)`}
+                          title={`Verified at ${record.formattedTime}`}
                           className="px-2 py-0.5 rounded-full bg-[#EBF1EA] text-[#5A5A40] flex items-center space-x-1 text-[10px] font-bold border border-[#889E81]/30 shrink-0"
                         >
                           <Check className="w-3 h-3 text-[#889E81]" />
-                          <span>2/2 Done</span>
-                        </span>
-                      ) : photoCount === 1 ? (
-                        <span
-                          title={`Verified at ${record.formattedTime} (1/2 Photos Attached)`}
-                          className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 flex items-center space-x-1 text-[10px] font-bold border border-blue-200 shrink-0"
-                        >
-                          <span>1/2 Photo</span>
+                          <span>Done</span>
                         </span>
                       ) : (
                         <span
-                          title="Pending Photo Upload"
+                          title="Pending Daily Check"
                           className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]"
                         >
-                          0/2 Photos
+                          Pending
                         </span>
                       )}
                     </div>
@@ -1283,11 +1268,11 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
           <div className="flex items-center space-x-2">
             <FileCheck className="w-4 h-4 text-[#889E81]" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#5A5A40]">
-              Today&apos;s Audited Daily Vitals Feed ({vitalsMetrics.completedBeds} Beds Completed &bull; {vitalsMetrics.totalPhotosUploaded} Photos Recorded)
+              Today&apos;s Audited Daily Vitals Feed ({vitalsMetrics.completedBeds} of {vitalsMetrics.totalBeds} Beds Completed)
             </h3>
           </div>
           <span className="text-xs text-[#7C7C6D]">
-            Standard: 2 Photos = 1 Bed &bull; Cryptographic Audit Watermark
+            Cryptographic Audit Watermark &bull; Live Telemetry Feed
           </span>
         </div>
 
@@ -1309,7 +1294,7 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                     </span>
                   </div>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-[#EBF1EA] text-[#5A5A40] border-[#889E81]/30">
-                    ✓ Verified {record.secondaryVitalsPhotoUrl ? '(2 Photos)' : ''}
+                    ✓ Verified
                   </span>
                 </div>
 

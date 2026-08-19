@@ -257,7 +257,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
           <Clock className="w-4 h-4 text-[#889E81]" />
           <span>Daily Vitals Round</span>
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EBF1EA] text-[#5A5A40] border border-[#889E81]/30">
-            {vitalsMetrics.completedBeds}/{vitalsMetrics.totalBeds} Beds ({vitalsMetrics.totalPhotosUploaded} Photos)
+            {vitalsMetrics.completedBeds}/{vitalsMetrics.totalBeds} Beds
           </span>
         </button>
         <button
