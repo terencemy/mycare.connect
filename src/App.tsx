@@ -482,6 +482,7 @@ export default function App() {
 
       // Synchronize with Supabase and backend
       await syncResidentToSupabase(residentPayload);
+      await reloadResidentsList();
     } catch (err) {
       console.error('Failed to add resident:', err);
     }
@@ -497,6 +498,7 @@ export default function App() {
 
       // Synchronize with Supabase and backend
       await updateResidentInSupabase(residentId, updatedFields);
+      await reloadResidentsList();
 
       // Keep careLogs and familyMessages sync'd with updated resident details
       if (updatedFields.fullName || updatedFields.roomNumber || updatedFields.bedNumber) {
@@ -541,6 +543,7 @@ export default function App() {
 
       // Delete from Supabase and backend
       await deleteResidentFromSupabase(residentId);
+      await reloadResidentsList();
     } catch (err) {
       console.error('Failed to delete resident:', err);
     }
@@ -602,6 +605,7 @@ export default function App() {
             onAddResident={handleAddResident}
             onUpdateResident={handleUpdateResident}
             onDeleteResident={handleDeleteResident}
+            onRefreshResidents={reloadResidentsList}
           />
         )}
       </main>

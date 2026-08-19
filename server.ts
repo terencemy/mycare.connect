@@ -628,8 +628,8 @@ async function startServer() {
     const rawId = req.body.id || `res_${Date.now()}`;
     const targetUuid = toValidUuid(rawId);
     const newResident: Resident = {
-      id: rawId,
       ...req.body,
+      id: targetUuid,
     };
 
     const existingIndex = residents.findIndex(
@@ -638,7 +638,7 @@ async function startServer() {
     if (existingIndex !== -1) {
       residents[existingIndex] = newResident;
     } else {
-      residents.push(newResident);
+      residents.unshift(newResident);
     }
 
     // Direct synchronous upsert to Supabase

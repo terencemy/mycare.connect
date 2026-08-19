@@ -65,6 +65,7 @@ interface AdminDashboardViewProps {
   onAddResident: (res: Partial<Resident>) => Promise<void>;
   onUpdateResident?: (residentId: string, updatedFields: Partial<Resident>) => Promise<void>;
   onDeleteResident?: (residentId: string) => Promise<void>;
+  onRefreshResidents?: () => Promise<void>;
 }
 
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
@@ -81,6 +82,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   onAddResident,
   onUpdateResident,
   onDeleteResident,
+  onRefreshResidents,
 }) => {
   const [activeTab, setActiveTab] = useState<'triage' | 'care_logs' | 'vitals_audit' | 'residents' | 'analytics' | 'supabase_schema' | 'admin_security'>('triage');
   const [careLogSearch, setCareLogSearch] = useState('');
@@ -285,6 +287,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           type: 'success',
           message: `Successfully synchronized ${result.count || residents.length} residents to your Supabase PostgreSQL table!`,
         });
+        if (onRefreshResidents) {
+          await onRefreshResidents();
+        }
       } else {
         setSyncToast({
           type: 'error',

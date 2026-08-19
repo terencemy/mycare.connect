@@ -346,7 +346,7 @@ export const fetchResidentsFromSupabase = async (): Promise<{ success: boolean; 
     const res = await fetch('/api/residents');
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         return { success: true, residents: data };
       }
     }
@@ -367,20 +367,18 @@ export const fetchResidentsFromSupabase = async (): Promise<{ success: boolean; 
         return { success: false, residents: [], error: error.message };
       }
 
-      if (data && data.length > 0) {
+      if (data && Array.isArray(data)) {
         const residents = data
           .filter((row: any) => row.is_active !== false)
           .map(supabaseRowToResident);
         return { success: true, residents };
       }
-
-      return { success: true, residents: [] };
     } catch (err: any) {
       return { success: false, residents: [], error: err?.message || 'Connection error' };
     }
   }
 
-  return { success: true, residents: [] };
+  return { success: false, residents: [], error: 'Supabase credentials not found' };
 };
 
 /**
