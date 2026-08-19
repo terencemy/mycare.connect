@@ -411,12 +411,41 @@ export const syncAllResidentsToSupabase = async (
   if (SUPABASE_URL && !SUPABASE_URL.includes('placeholder') && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('placeholder')) {
     try {
       const rows = residentsList.map((r) => residentToSupabaseRow(r));
-      const { data, error } = await safeUpsertResidentsTable(rows);
-
-      if (error) {
-        return { success: false, count: 0, error: error.message };
+      if (rows.length > 0) {
+        const { error } = await safeUpsertResidentsTable(rows);
+        if (error) {
+          return { success: false, count: 0, error: error.message };
+        }
       }
-      return { success: true, count: data?.length || rows.length };
+
+      // Reconcile and prune orphaned residents from Supabase
+      try {
+        const { data: remoteRows } = await supabase.from('residents').select('id, full_name');
+        if (Array.isArray(remoteRows)) {
+          for (const remoteRow of remoteRows) {
+            const rowId = String(remoteRow.id).toLowerCase();
+            const rowName = (remoteRow.full_name || '').trim().toLowerCase();
+            const shouldKeep = residentsList.some((inc) => {
+              const incUuid = toValidUuid(inc.id).toLowerCase();
+              const incId = String(inc.id).toLowerCase();
+              const incName = (inc.fullName || '').trim().toLowerCase();
+              return rowId === incUuid || rowId === incId || (rowName && rowName === incName);
+            });
+
+            if (!shouldKeep) {
+              await supabase.from('residents').update({ is_active: false }).eq('id', remoteRow.id);
+              await supabase.from('residents').delete().eq('id', remoteRow.id);
+              if (remoteRow.full_name) {
+                await supabase.from('residents').delete().ilike('full_name', remoteRow.full_name.trim());
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Client prune note:', e);
+      }
+
+      return { success: true, count: rows.length };
     } catch (err: any) {
       return { success: false, count: 0, error: err?.message || 'Connection error' };
     }
@@ -430,11 +459,14 @@ export const syncAllResidentsToSupabase = async (
  * Deletes a resident record from Supabase database
  */
 export const deleteResidentFromSupabase = async (
-  residentId: string
+  residentId: string,
+  fullName?: string
 ): Promise<{ success: boolean; error?: string }> => {
+  const queryParams = fullName ? `?name=${encodeURIComponent(fullName.trim())}` : '';
+
   // First route through server backend
   try {
-    const res = await fetch(`/api/residents/${encodeURIComponent(residentId)}`, {
+    const res = await fetch(`/api/residents/${encodeURIComponent(residentId)}${queryParams}`, {
       method: 'DELETE',
     });
     if (res.ok) {
@@ -448,33 +480,20 @@ export const deleteResidentFromSupabase = async (
   if (SUPABASE_URL && !SUPABASE_URL.includes('placeholder') && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('placeholder')) {
     try {
       const targetUuid = toValidUuid(residentId);
+      const nameToDelete = (fullName || '').trim();
 
-      // 1. Mark as inactive (guaranteed to succeed across RLS update policies)
-      await supabase
-        .from('residents')
-        .update({ is_active: false })
-        .eq('id', targetUuid);
+      // 1. Mark as inactive
+      await supabase.from('residents').update({ is_active: false }).eq('id', targetUuid);
+      await supabase.from('residents').update({ is_active: false }).eq('id', residentId);
+      if (nameToDelete) {
+        await supabase.from('residents').update({ is_active: false }).ilike('full_name', nameToDelete);
+      }
       
       // 2. Physical delete
-      const { error: uuidErr } = await supabase
-        .from('residents')
-        .delete()
-        .eq('id', targetUuid);
-
-      if (uuidErr) {
-        await supabase
-          .from('residents')
-          .update({ is_active: false })
-          .eq('id', residentId);
-
-        const { error: rawErr } = await supabase
-          .from('residents')
-          .delete()
-          .eq('id', residentId);
-
-        if (rawErr && uuidErr) {
-          console.warn('Supabase delete resident error:', uuidErr.message || rawErr.message);
-        }
+      await supabase.from('residents').delete().eq('id', targetUuid);
+      await supabase.from('residents').delete().eq('id', residentId);
+      if (nameToDelete) {
+        await supabase.from('residents').delete().ilike('full_name', nameToDelete);
       }
 
       return { success: true };

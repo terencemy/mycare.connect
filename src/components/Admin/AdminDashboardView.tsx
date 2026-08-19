@@ -49,6 +49,7 @@ import {
   LogOut,
   Eye,
   EyeOff,
+  Save,
 } from 'lucide-react';
 
 interface AdminDashboardViewProps {
@@ -352,6 +353,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     rowCount: 0,
   });
 
+  const [inputSupabaseUrl, setInputSupabaseUrl] = useState('');
+  const [inputSupabaseKey, setInputSupabaseKey] = useState('');
+  const [isConfiguringSupabase, setIsConfiguringSupabase] = useState(false);
+  const [configureSupabaseMsg, setConfigureSupabaseMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   const handleTestSupabase = async () => {
     try {
       setSupabaseTestStatus('testing');
@@ -385,6 +391,46 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     } catch (err: any) {
       setSupabaseTestStatus('error');
       setSupabaseTestMsg(`Connection notice: ${err?.message || 'Network error connecting to API.'}`);
+    }
+  };
+
+  const handleConfigureSupabase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputSupabaseUrl.trim() || !inputSupabaseKey.trim()) {
+      setConfigureSupabaseMsg({ type: 'error', text: 'Both Supabase URL and Anon/Service Key are required.' });
+      return;
+    }
+    setIsConfiguringSupabase(true);
+    setConfigureSupabaseMsg(null);
+    try {
+      const res = await fetch('/api/admin/configure-supabase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: inputSupabaseUrl, key: inputSupabaseKey }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setConfigureSupabaseMsg({
+          type: 'success',
+          text: `✓ Live Supabase successfully connected! Loaded ${data.count ?? 0} resident records.`,
+        });
+        await handleTestSupabase();
+        if (onRefreshResidents) {
+          await onRefreshResidents();
+        }
+      } else {
+        setConfigureSupabaseMsg({
+          type: 'error',
+          text: data.error || 'Failed to connect with provided Supabase parameters.',
+        });
+      }
+    } catch (err: any) {
+      setConfigureSupabaseMsg({
+        type: 'error',
+        text: `Network error: ${err?.message || 'Failed to reach backend'}`,
+      });
+    } finally {
+      setIsConfiguringSupabase(false);
     }
   };
 
@@ -2140,6 +2186,77 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 <span>{supabaseTestMsg}</span>
               </div>
             )}
+
+            {/* Live Cloud Setup / Connection Manager */}
+            <div className="pt-2 border-t border-[#F0ECE2]">
+              <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Database className="w-4 h-4 text-[#889E81]" />
+                    <h4 className="text-xs font-bold text-[#5A5A40]">
+                      Live Cloud Supabase Connection (Render / Production)
+                    </h4>
+                  </div>
+                  <span className="text-[10px] font-bold text-[#7C7C6D] bg-[#F0ECE2] px-2.5 py-0.5 rounded-full border border-[#E6E2D3]">
+                    Instant Connect
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-[#7C7C6D] leading-relaxed">
+                  If running on Render (<code className="text-[#5A5A40] font-mono">mycare-connect.onrender.com</code>), make sure to add <code className="text-[#5A5A40] bg-[#F0ECE2] px-1 rounded font-mono">NEXT_PUBLIC_SUPABASE_URL</code> and <code className="text-[#5A5A40] bg-[#F0ECE2] px-1 rounded font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in your <strong>Render Dashboard &gt; Environment</strong>. You can also connect and sync immediately using the fields below:
+                </p>
+
+                <form onSubmit={handleConfigureSupabase} className="space-y-2.5 pt-1">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="text-[11px] font-bold text-[#5A5A40] block mb-1">
+                        Supabase Project URL:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="https://jjaduhfcetzhzwmcjuri.supabase.co"
+                        value={inputSupabaseUrl}
+                        onChange={(e) => setInputSupabaseUrl(e.target.value)}
+                        className="w-full text-xs p-2.5 bg-white border border-[#E6E2D3] rounded-xl font-mono text-[#2C332A] focus:ring-2 focus:ring-[#889E81] focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-[#5A5A40] block mb-1">
+                        Supabase Anon / Service Key:
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                        value={inputSupabaseKey}
+                        onChange={(e) => setInputSupabaseKey(e.target.value)}
+                        className="w-full text-xs p-2.5 bg-white border border-[#E6E2D3] rounded-xl font-mono text-[#2C332A] focus:ring-2 focus:ring-[#889E81] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="submit"
+                      disabled={isConfiguringSupabase}
+                      className="px-4 py-2 bg-[#889E81] hover:bg-[#778E70] text-white rounded-full text-xs font-semibold flex items-center space-x-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{isConfiguringSupabase ? 'Connecting...' : 'Save & Connect Supabase Live'}</span>
+                    </button>
+
+                    {configureSupabaseMsg && (
+                      <span
+                        className={`text-xs font-medium ${
+                          configureSupabaseMsg.type === 'success' ? 'text-emerald-700' : 'text-red-600'
+                        }`}
+                      >
+                        {configureSupabaseMsg.text}
+                      </span>
+                    )}
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
 
           {/* Quick Fix / Schema Cache Migration Box */}

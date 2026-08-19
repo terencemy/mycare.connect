@@ -536,13 +536,23 @@ export default function App() {
   const handleDeleteResident = async (residentId: string) => {
     try {
       const targetUuid = toValidUuid(residentId);
+      const targetResident = residents.find(
+        (r) => r.id === residentId || toValidUuid(r.id) === targetUuid
+      );
+      const fullName = targetResident?.fullName || '';
+
       // Optimistically remove resident from state
       setResidents((prev) =>
-        prev.filter((r) => r.id !== residentId && toValidUuid(r.id) !== targetUuid)
+        prev.filter(
+          (r) =>
+            r.id !== residentId &&
+            toValidUuid(r.id) !== targetUuid &&
+            (fullName ? r.fullName.trim().toLowerCase() !== fullName.trim().toLowerCase() : true)
+        )
       );
 
       // Delete from Supabase and backend
-      await deleteResidentFromSupabase(residentId);
+      await deleteResidentFromSupabase(residentId, fullName);
       await reloadResidentsList();
     } catch (err) {
       console.error('Failed to delete resident:', err);

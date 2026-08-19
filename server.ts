@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
@@ -59,18 +60,30 @@ interface PendingOtp {
 }
 const pendingAdminOtps = new Map<string, PendingOtp>();
 
+// Dynamic runtime Supabase configuration cache
+let dynamicSupabaseUrl = '';
+let dynamicSupabaseKey = '';
+
 // Supabase Server Client Setup - dynamic getter supporting all environment variable naming conventions
 function getSupabaseConfig(): { url: string; key: string } {
   const url =
+    dynamicSupabaseUrl ||
     process.env.SUPABASE_URL ||
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.VITE_SUPABASE_URL ||
+    process.env.SUPABASE_PROJECT_URL ||
+    process.env.SUPABASE_API_URL ||
     '';
   const key =
+    dynamicSupabaseKey ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_KEY ||
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_PUBLIC_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
     '';
   return { url: sanitizeSupabaseUrl(url.trim()), key: key.trim() };
 }
@@ -261,7 +274,7 @@ async function safeUpsertResidentsServer(rows: any[]): Promise<{ data: any; erro
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -592,6 +605,50 @@ async function startServer() {
     }
   });
 
+  // Dynamic Supabase Configuration Endpoint
+  app.post('/api/admin/configure-supabase', async (req, res) => {
+    try {
+      const { url, key } = req.body;
+      if (!url || !key) {
+        return res.status(400).json({ success: false, error: 'Both Supabase URL and Anon/Service Key are required.' });
+      }
+
+      dynamicSupabaseUrl = sanitizeSupabaseUrl(url.trim());
+      dynamicSupabaseKey = key.trim();
+      cachedSupabaseClient = null;
+      lastUsedUrl = '';
+      lastUsedKey = '';
+
+      const client = getSupabaseServerClient();
+      if (!client) {
+        return res.status(400).json({ success: false, error: 'Failed to initialize Supabase client with provided parameters.' });
+      }
+
+      const { data, error } = await client
+        .from('residents')
+        .select('*')
+        .neq('is_active', false)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        return res.status(400).json({ success: false, error: error.message, url: dynamicSupabaseUrl });
+      }
+
+      if (Array.isArray(data)) {
+        residents = data.filter((row: any) => row.is_active !== false).map(dbRowToResident);
+      }
+
+      res.json({
+        success: true,
+        message: `Supabase configured successfully! Found ${residents.length} resident(s).`,
+        count: residents.length,
+        residents,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || 'Configuration error' });
+    }
+  });
+
   // Residents Endpoints
   app.get('/api/residents', async (req, res) => {
     try {
@@ -692,8 +749,13 @@ async function startServer() {
   app.delete('/api/residents/:id', async (req, res) => {
     const residentId = req.params.id;
     const targetUuid = toValidUuid(residentId);
+    const queryName = (req.query.name as string) || req.body?.fullName || req.body?.name || '';
+
     const index = residents.findIndex(
-      (r) => r.id === residentId || toValidUuid(r.id) === targetUuid
+      (r) =>
+        r.id === residentId ||
+        toValidUuid(r.id) === targetUuid ||
+        (queryName && r.fullName.trim().toLowerCase() === queryName.trim().toLowerCase())
     );
 
     let deletedResident: Resident | null = null;
@@ -701,20 +763,24 @@ async function startServer() {
       [deletedResident] = residents.splice(index, 1);
     }
 
+    const nameToDelete = (deletedResident?.fullName || queryName).trim();
+
     // Synchronously delete / deactivate from Supabase
     try {
       const client = getSupabaseServerClient();
       if (client) {
         // 1. Mark as inactive (guaranteed to succeed across RLS update policies)
         await client.from('residents').update({ is_active: false }).eq('id', targetUuid);
-        if (deletedResident?.fullName) {
-          await client.from('residents').update({ is_active: false }).ilike('full_name', deletedResident.fullName.trim());
+        await client.from('residents').update({ is_active: false }).eq('id', residentId);
+        if (nameToDelete) {
+          await client.from('residents').update({ is_active: false }).ilike('full_name', nameToDelete);
         }
 
         // 2. Physical delete
         await client.from('residents').delete().eq('id', targetUuid);
-        if (deletedResident?.fullName) {
-          await client.from('residents').delete().ilike('full_name', deletedResident.fullName.trim());
+        await client.from('residents').delete().eq('id', residentId);
+        if (nameToDelete) {
+          await client.from('residents').delete().ilike('full_name', nameToDelete);
         }
       }
     } catch (e) {
@@ -724,43 +790,83 @@ async function startServer() {
     res.json({ success: true, message: 'Resident and bed allocation deleted', resident: deletedResident });
   });
 
-  // Supabase Bulk Sync Route
+  // Supabase Bulk Sync & Reconciliation Route
   app.post('/api/residents/sync-supabase', async (req, res) => {
     try {
-      const incomingList: Resident[] = Array.isArray(req.body.residents) && req.body.residents.length > 0
+      const incomingList: Resident[] = Array.isArray(req.body.residents)
         ? req.body.residents
         : residents;
 
-      if (incomingList.length > 0) {
-        incomingList.forEach((incoming) => {
-          const idx = residents.findIndex(
-            (r) => r.id === incoming.id || toValidUuid(r.id) === toValidUuid(incoming.id)
-          );
-          if (idx !== -1) {
-            residents[idx] = { ...residents[idx], ...incoming };
-          } else {
-            residents.push(incoming);
-          }
-        });
-      }
+      // Update in-memory residents list to match the authoritative active list
+      residents = [...incomingList];
 
       const client = getSupabaseServerClient();
       if (!client) {
         return res.status(400).json({
           success: false,
           count: 0,
-          error: 'Supabase credentials are not configured in environment variables. Please add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or SUPABASE_URL and SUPABASE_ANON_KEY) in Settings/Environment Variables.',
+          error: 'Supabase credentials are not configured in environment variables. Please add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Settings / Render Environment.',
         });
       }
 
+      // 1. Upsert all active residents into Supabase
       const rows = incomingList.map(residentToDbRow);
-      const { data, error } = await safeUpsertResidentsServer(rows);
-
-      if (error) {
-        return res.status(400).json({ success: false, error: error.message });
+      if (rows.length > 0) {
+        const { error: upsertErr } = await safeUpsertResidentsServer(rows);
+        if (upsertErr) {
+          return res.status(400).json({ success: false, error: upsertErr.message });
+        }
       }
 
-      res.json({ success: true, count: data?.length || rows.length });
+      // 2. Full Reconciliation: Prune any remote records that are NOT in the incoming active list
+      try {
+        const { data: remoteRows, error: fetchErr } = await client
+          .from('residents')
+          .select('id, full_name, is_active');
+
+        if (!fetchErr && Array.isArray(remoteRows)) {
+          for (const remoteRow of remoteRows) {
+            const rowId = String(remoteRow.id).toLowerCase();
+            const rowName = (remoteRow.full_name || '').trim().toLowerCase();
+
+            // Check if this remote record is retained in the active list
+            const shouldKeep = incomingList.some((inc) => {
+              const incUuid = toValidUuid(inc.id).toLowerCase();
+              const incId = String(inc.id).toLowerCase();
+              const incName = (inc.fullName || '').trim().toLowerCase();
+              return rowId === incUuid || rowId === incId || (rowName && rowName === incName);
+            });
+
+            if (!shouldKeep) {
+              // Deactivate and delete the removed/orphaned record from Supabase
+              await client.from('residents').update({ is_active: false }).eq('id', remoteRow.id);
+              await client.from('residents').delete().eq('id', remoteRow.id);
+              if (remoteRow.full_name) {
+                await client.from('residents').delete().ilike('full_name', remoteRow.full_name.trim());
+              }
+            }
+          }
+        }
+      } catch (pruneErr) {
+        console.warn('Supabase remote prune note:', pruneErr);
+      }
+
+      // 3. Re-fetch current active Supabase residents to ensure full state alignment
+      try {
+        const { data: refreshedData } = await client
+          .from('residents')
+          .select('*')
+          .neq('is_active', false)
+          .order('created_at', { ascending: false });
+
+        if (Array.isArray(refreshedData)) {
+          residents = refreshedData.filter((r: any) => r.is_active !== false).map(dbRowToResident);
+        }
+      } catch (e) {
+        console.warn('Supabase refresh note:', e);
+      }
+
+      res.json({ success: true, count: residents.length, residents });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message || 'Failed to sync with Supabase' });
     }
