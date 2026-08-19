@@ -2242,17 +2242,21 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                     </div>
                     <div>
                       <label className="text-[11px] font-bold text-[#5A5A40] block mb-1">
-                        Supabase Anon / Service Key:
+                        Supabase Anon or Service Role Key:
                       </label>
                       <input
                         type="password"
-                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... (Anon or Service Role Key)"
                         value={inputSupabaseKey}
                         onChange={(e) => setInputSupabaseKey(e.target.value)}
                         className="w-full text-xs p-2.5 bg-white border border-[#E6E2D3] rounded-xl font-mono text-[#2C332A] focus:ring-2 focus:ring-[#889E81] focus:outline-none"
                       />
                     </div>
                   </div>
+
+                  <p className="text-[10px] text-[#7C7C6D] pt-0.5">
+                    💡 <strong>Tip:</strong> Using the <strong>service_role (secret) key</strong> (from Supabase Dashboard &gt; Project Settings &gt; API) bypasses PostgreSQL Row Level Security (RLS) and allows physical deletions directly from the portal.
+                  </p>
 
                   <div className="flex items-center justify-between pt-1">
                     <button
