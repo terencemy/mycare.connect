@@ -214,3 +214,56 @@ export function getLatestVitalsForResident(
 
   return null;
 }
+
+/**
+ * Calculates accurate Vital Signs Bed & Photo compliance metrics:
+ * Standard protocol: 2 photos = 1 bed (Photo 1: Primary Monitor + Photo 2: Secondary Monitor/Reading).
+ */
+export function getVitalsAuditMetrics(
+  residents: Resident[] = [],
+  morningVitals: MorningVitalsRecord[] = [],
+  careLogs: CareLog[] = []
+) {
+  const totalBeds = residents.length;
+  const totalExpectedPhotos = totalBeds * 2; // 2 photos = 1 bed
+
+  let completedBeds = 0;
+  let totalPhotosUploaded = 0;
+  let fullyCompletedBeds = 0; // has both photos (2/2)
+  let partialBeds = 0; // has 1 photo (1/2)
+
+  residents.forEach((res) => {
+    const record = morningVitals.find((v) => isResidentMatch(res, v));
+    const latest = getLatestVitalsForResident(res, morningVitals, careLogs);
+
+    const photo1 = record?.vitalsPhotoUrl || latest?.photoUrl;
+    const photo2 = record?.secondaryVitalsPhotoUrl || latest?.secondaryPhotoUrl;
+
+    const photoCount = (photo1 ? 1 : 0) + (photo2 ? 1 : 0);
+    totalPhotosUploaded += photoCount;
+
+    if (photoCount > 0 || (latest && latest.hasRecord)) {
+      completedBeds++;
+      if (photoCount >= 2) {
+        fullyCompletedBeds++;
+      } else {
+        partialBeds++;
+      }
+    }
+  });
+
+  const completionPercentage = totalBeds > 0 ? Math.round((completedBeds / totalBeds) * 100) : 0;
+  const photoCompliancePercentage =
+    totalExpectedPhotos > 0 ? Math.round((totalPhotosUploaded / totalExpectedPhotos) * 100) : 0;
+
+  return {
+    totalBeds,
+    completedBeds,
+    totalPhotosUploaded,
+    totalExpectedPhotos,
+    fullyCompletedBeds,
+    partialBeds,
+    completionPercentage,
+    photoCompliancePercentage,
+  };
+}

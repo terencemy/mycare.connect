@@ -1239,8 +1239,27 @@ Analyze this message and return:
         aiExtracted: req.body.aiExtracted || false,
       };
 
-      morningVitals.unshift(newRecord);
-      res.status(201).json(newRecord);
+      // Ensure 2 photos equal 1 bed record (deduplicate per resident / date)
+      const existingIdx = morningVitals.findIndex(
+        (v) =>
+          (v.residentId === newRecord.residentId ||
+            (v.residentFullName && v.residentFullName === newRecord.residentFullName) ||
+            (v.roomNumber === newRecord.roomNumber && v.bedNumber === newRecord.bedNumber)) &&
+          (v.formattedDate === newRecord.formattedDate ||
+            v.recordedAt.split('T')[0] === newRecord.recordedAt.split('T')[0])
+      );
+
+      if (existingIdx >= 0) {
+        morningVitals[existingIdx] = {
+          ...morningVitals[existingIdx],
+          ...newRecord,
+          id: morningVitals[existingIdx].id, // preserve ID
+        };
+        res.status(200).json(morningVitals[existingIdx]);
+      } else {
+        morningVitals.unshift(newRecord);
+        res.status(201).json(newRecord);
+      }
     } catch (err: any) {
       console.error('Error saving morning vitals record:', err);
       res.status(500).json({ error: 'Failed to record morning vitals' });

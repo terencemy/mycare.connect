@@ -10,6 +10,7 @@ import {
   MorningVitalsRecord,
 } from '../../types';
 import { MorningVitalsModule } from './MorningVitalsModule';
+import { getVitalsAuditMetrics } from '../../utils/residentMatcher';
 import {
   Camera,
   Upload,
@@ -218,6 +219,8 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
     }, 2500);
   };
 
+  const vitalsMetrics = getVitalsAuditMetrics(residents, morningVitals, existingLogs);
+
   return (
     <div className="space-y-6">
       {/* Top Banner: Nurse Focus Shield Notification */}
@@ -254,7 +257,7 @@ export const CaregiverView: React.FC<CaregiverViewProps> = ({
           <Clock className="w-4 h-4 text-[#889E81]" />
           <span>Daily Vitals Round</span>
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EBF1EA] text-[#5A5A40] border border-[#889E81]/30">
-            {morningVitals.length}/{residents.length} Beds
+            {vitalsMetrics.completedBeds}/{vitalsMetrics.totalBeds} Beds ({vitalsMetrics.totalPhotosUploaded} Photos)
           </span>
         </button>
         <button

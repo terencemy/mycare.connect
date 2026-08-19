@@ -6,7 +6,7 @@ import {
 } from '../../types';
 import { SAMPLE_VITALS_PRESETS } from '../../data/mockData';
 import { applyVitalsWatermark } from '../../utils/watermark';
-import { isResidentMatch } from '../../utils/residentMatcher';
+import { isResidentMatch, getVitalsAuditMetrics } from '../../utils/residentMatcher';
 import {
   Camera,
   Upload,
@@ -267,7 +267,8 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
     };
   }, [secondaryRawPhotoUrl, selectedResident, caregiver.name, bloodPressure, pulseRate, spo2, temperature]);
 
-  const completedCount = residents.filter((r) => getResidentTodayRecord(r.id)).length;
+  const vitalsMetrics = getVitalsAuditMetrics(residents, morningVitals);
+  const completedCount = vitalsMetrics.completedBeds;
 
   // AI Vision analysis with Gemini
   const analyzePhotoWithAI = async (photoInput: string, customDeviceHint?: string) => {
@@ -497,30 +498,61 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
             <div className="h-8 w-px bg-[#E6E2D3]"></div>
             <div>
               <span className="text-[10px] uppercase font-bold text-[#8C8C7E] block">
-                Ward Compliance
+                Ward Bed Compliance
               </span>
-              <div className="text-sm font-bold text-[#889E81]">
-                {completedCount} of {residents.length} Beds
+              <div className="text-sm font-bold text-[#889E81] flex items-center space-x-1.5">
+                <span>{vitalsMetrics.completedBeds} of {vitalsMetrics.totalBeds} Beds</span>
+                <span className="text-[10px] font-normal text-[#7C7C6D]">
+                  ({vitalsMetrics.totalPhotosUploaded}/{vitalsMetrics.totalExpectedPhotos} photos)
+                </span>
               </div>
             </div>
           </div>
         </div>
 
+        {/* Protocol helper banner: 2 photos = 1 bed */}
+        <div className="mt-3 pt-3 border-t border-[#E6E2D3] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs bg-[#FAF9F6] p-3 rounded-2xl border border-[#E6E2D3]">
+          <div className="flex items-center space-x-2 text-[#5A5A40]">
+            <ShieldCheck className="w-4 h-4 text-[#889E81] shrink-0" />
+            <span className="font-semibold">
+              Clinical Protocol Rule: <strong>2 Device Photos = 1 Completed Bed</strong> (Monitor 1: BP/Pulse + Monitor 2: SpO2/Temp/Sugar).
+            </span>
+          </div>
+          <div className="flex items-center space-x-2 shrink-0">
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#EBF1EA] text-[#5A5A40] border border-[#889E81]/30">
+              {vitalsMetrics.fullyCompletedBeds} Dual-Verified Beds
+            </span>
+            {vitalsMetrics.partialBeds > 0 && (
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
+                {vitalsMetrics.partialBeds} Single-Photo
+              </span>
+            )}
+          </div>
+        </div>
+
         {/* Resident Bed Quick Selection Strip */}
         <div className="mt-4 pt-4 border-t border-[#E6E2D3]">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[#7C7C6D] block mb-2">
-            Select Resident Bed for Daily Check:
-          </span>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#7C7C6D] block">
+              Select Resident Bed for Daily Check:
+            </span>
+            <span className="text-[10px] text-[#7C7C6D]">
+              Target: 2 Photos per Bed
+            </span>
+          </div>
           {residents.length === 0 ? (
             <div className="text-center py-4 px-4 bg-[#FAF9F6] rounded-2xl border border-dashed border-[#E6E2D3]">
               <p className="text-xs font-semibold text-[#5A5A40]">No resident beds registered yet</p>
               <p className="text-[11px] text-[#7C7C6D] mt-0.5">Please add a resident in the Admin Dashboard to start the daily vitals protocol.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 w-full">
               {residents.map((r) => {
                 const isSelected = selectedResident?.id === r.id;
                 const record = getResidentTodayRecord(r.id);
+                const photo1 = record?.vitalsPhotoUrl;
+                const photo2 = record?.secondaryVitalsPhotoUrl;
+                const photoCount = (photo1 ? 1 : 0) + (photo2 ? 1 : 0);
                 const isDone = !!record;
 
                 return (
@@ -529,13 +561,13 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                     id={`select-morning-resident-${r.id}`}
                     type="button"
                     onClick={() => handleSelectResident(r)}
-                    className={`p-3 rounded-2xl text-left border transition-all cursor-pointer flex items-center justify-between ${
+                    className={`p-3 rounded-2xl text-left border transition-all cursor-pointer flex items-center justify-between w-full min-w-0 ${
                       isSelected
                         ? 'bg-[#F7F5F0] border-2 border-[#889E81] shadow-xs'
                         : 'bg-white border-[#E6E2D3] hover:bg-[#FAF9F6]'
                     }`}
                   >
-                    <div className="flex items-center space-x-2.5 truncate">
+                    <div className="flex items-center space-x-2.5 truncate min-w-0 mr-2">
                       <div className="w-8 h-8 rounded-full bg-[#EBF1EA] text-[#5A5A40] font-bold text-[11px] flex items-center justify-center shrink-0 ring-1 ring-[#889E81]/30">
                         {r.fullName
                           ? r.fullName
@@ -547,30 +579,38 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
                               .toUpperCase()
                           : 'R'}
                       </div>
-                      <div className="truncate">
+                      <div className="truncate min-w-0">
                         <div className="text-xs font-bold text-[#5A5A40] truncate">
                           {r.fullName}
                         </div>
-                        <div className="text-[10px] text-[#7C7C6D]">
+                        <div className="text-[10px] text-[#7C7C6D] truncate">
                           R {r.roomNumber} &bull; {r.bedNumber}
                         </div>
                       </div>
                     </div>
 
-                    <div>
-                      {isDone ? (
+                    <div className="shrink-0">
+                      {photoCount === 2 ? (
                         <span
-                          title={`Verified at ${record.formattedTime}`}
-                          className="w-6 h-6 rounded-full bg-[#EBF1EA] text-[#889E81] flex items-center justify-center text-xs font-bold border border-[#889E81]/30 shrink-0"
+                          title={`Verified at ${record.formattedTime} (2/2 Photos Attached)`}
+                          className="px-2 py-0.5 rounded-full bg-[#EBF1EA] text-[#5A5A40] flex items-center space-x-1 text-[10px] font-bold border border-[#889E81]/30 shrink-0"
                         >
-                          <Check className="w-3.5 h-3.5" />
+                          <Check className="w-3 h-3 text-[#889E81]" />
+                          <span>2/2 Done</span>
+                        </span>
+                      ) : photoCount === 1 ? (
+                        <span
+                          title={`Verified at ${record.formattedTime} (1/2 Photos Attached)`}
+                          className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 flex items-center space-x-1 text-[10px] font-bold border border-blue-200 shrink-0"
+                        >
+                          <span>1/2 Photo</span>
                         </span>
                       ) : (
                         <span
                           title="Pending Photo Upload"
                           className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]"
                         >
-                          Pending upload
+                          0/2 Photos
                         </span>
                       )}
                     </div>
@@ -1243,11 +1283,11 @@ export const MorningVitalsModule: React.FC<MorningVitalsModuleProps> = ({
           <div className="flex items-center space-x-2">
             <FileCheck className="w-4 h-4 text-[#889E81]" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#5A5A40]">
-              Today&apos;s Audited Daily Vitals Feed ({morningVitals.length} Recorded)
+              Today&apos;s Audited Daily Vitals Feed ({vitalsMetrics.completedBeds} Beds Completed &bull; {vitalsMetrics.totalPhotosUploaded} Photos Recorded)
             </h3>
           </div>
           <span className="text-xs text-[#7C7C6D]">
-            All photos timestamped with cryptographic audit watermark
+            Standard: 2 Photos = 1 Bed &bull; Cryptographic Audit Watermark
           </span>
         </div>
 

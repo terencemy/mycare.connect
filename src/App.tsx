@@ -211,7 +211,16 @@ export default function App() {
         const created: MorningVitalsRecord = await response.json();
         setMorningVitals((prev) => [
           created,
-          ...prev.filter((v) => !(v.residentId === created.residentId && v.formattedDate === created.formattedDate)),
+          ...prev.filter(
+            (v) =>
+              !(
+                (v.residentId === created.residentId ||
+                  (v.residentFullName && v.residentFullName === created.residentFullName) ||
+                  (v.roomNumber === created.roomNumber && v.bedNumber === created.bedNumber)) &&
+                (v.formattedDate === created.formattedDate ||
+                  v.recordedAt?.split('T')[0] === created.recordedAt?.split('T')[0])
+              )
+          ),
         ]);
       } else {
         const now = new Date();
@@ -234,7 +243,16 @@ export default function App() {
         };
         setMorningVitals((prev) => [
           fallback,
-          ...prev.filter((v) => !(v.residentId === fallback.residentId && v.formattedDate === fallback.formattedDate)),
+          ...prev.filter(
+            (v) =>
+              !(
+                (v.residentId === fallback.residentId ||
+                  (v.residentFullName && v.residentFullName === fallback.residentFullName) ||
+                  (v.roomNumber === fallback.roomNumber && v.bedNumber === fallback.bedNumber)) &&
+                (v.formattedDate === fallback.formattedDate ||
+                  v.recordedAt?.split('T')[0] === fallback.recordedAt?.split('T')[0])
+              )
+          ),
         ]);
       }
     } catch (err) {
@@ -564,7 +582,7 @@ export default function App() {
   ).length;
 
   return (
-    <div className="min-h-screen bg-[#F7F5F0] text-[#4A4A40] flex flex-col font-sans antialiased selection:bg-[#889E81]/20 selection:text-[#5A5A40]">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#F7F5F0] text-[#4A4A40] flex flex-col font-sans antialiased selection:bg-[#889E81]/20 selection:text-[#5A5A40]">
       {/* Global Navigation Header */}
       <Header
         currentUser={currentUser}
@@ -576,7 +594,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden min-w-0">
         {currentRole === 'caregiver' && (
           <CaregiverView
             residents={residents}
@@ -628,8 +646,8 @@ export default function App() {
       />
 
       {/* Footer */}
-      <footer className="bg-[#FAF9F6] border-t border-[#E6E2D3] py-4 text-xs text-[#7C7C6D]">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <footer className="bg-[#FAF9F6] border-t border-[#E6E2D3] py-4 text-xs text-[#7C7C6D] w-full max-w-full overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
           <span className="flex items-center space-x-2">
             <span className="font-semibold text-[#5A5A40]">Care Connect</span>
             <span>&bull;</span>

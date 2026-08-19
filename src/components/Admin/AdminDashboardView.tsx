@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase, SUPABASE_URL, syncAllResidentsToSupabase } from '../../lib/supabaseClient';
-import { isResidentMatch, getLatestVitalsForResident } from '../../utils/residentMatcher';
+import { isResidentMatch, getLatestVitalsForResident, getVitalsAuditMetrics } from '../../utils/residentMatcher';
 import {
   Resident,
   CareLog,
@@ -765,6 +765,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
   );
   const approvedCareLogs = careLogs.filter((l) => l.approvalStatus === 'approved');
   const rejectedCareLogs = careLogs.filter((l) => l.approvalStatus === 'rejected');
+  const vitalsMetrics = getVitalsAuditMetrics(residents, morningVitals, careLogs);
 
   return (
     <div className="space-y-6">
@@ -899,7 +900,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
           <Clock className="w-4 h-4 text-[#889E81]" />
           <span>Daily Vitals Audit &amp; Watermarks</span>
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#EBF1EA] text-[#5A5A40] border border-[#889E81]/30">
-            {morningVitals.length}/{residents.length} Completed
+            {vitalsMetrics.completedBeds}/{vitalsMetrics.totalBeds} Beds ({vitalsMetrics.totalPhotosUploaded} Photos)
           </span>
         </button>
 
@@ -1403,21 +1404,43 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 </h3>
               </div>
               <p className="text-xs text-[#7C7C6D]">
-                During daily rounds, nursing staff captures equipment readings with an immutable Canvas-baked watermark showing date, time, resident bed tag, and staff signature.
+                Clinical Protocol Standard: <strong>2 Device Photos = 1 Completed Bed</strong> (Monitor 1: BP/Pulse + Monitor 2: SpO2/Temp/Sugar). Each photo is validated with an immutable Canvas-baked watermark.
               </p>
             </div>
 
             <div className="flex items-center space-x-3 shrink-0">
               <div className="bg-white px-4 py-2.5 rounded-2xl border border-[#E6E2D3] text-right">
-                <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold">Round Completion</span>
+                <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold">Bed Round Completion</span>
                 <span className="text-lg font-bold text-[#889E81]">
-                  {Math.round((morningVitals.length / Math.max(residents.length, 1)) * 100)}%
+                  {vitalsMetrics.completedBeds} / {vitalsMetrics.totalBeds} Beds ({vitalsMetrics.completionPercentage}%)
                 </span>
               </div>
               <div className="bg-white px-4 py-2.5 rounded-2xl border border-[#E6E2D3] text-right">
-                <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold">Timestamp Audit</span>
-                <span className="text-lg font-bold text-[#5A5A40]">100% Pass</span>
+                <span className="text-[10px] text-[#8C8C7E] uppercase block font-bold">Photos Audited</span>
+                <span className="text-lg font-bold text-[#5A5A40]">
+                  {vitalsMetrics.totalPhotosUploaded} / {vitalsMetrics.totalExpectedPhotos} ({vitalsMetrics.fullyCompletedBeds} Dual-Verified)
+                </span>
               </div>
+            </div>
+          </div>
+
+          {/* Protocol Alignment Helper Banner */}
+          <div className="bg-[#EBF1EA] border border-[#889E81]/30 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-[#5A5A40]">
+            <div className="flex items-center space-x-2">
+              <ShieldCheck className="w-4 h-4 text-[#889E81] shrink-0" />
+              <span>
+                <strong>Accurate Tally Formula:</strong> 2 photos = 1 bed. Uploading 2 photos for 1 resident updates their single bed record and does not double-count bed totals.
+              </span>
+            </div>
+            <div className="flex items-center space-x-2 shrink-0">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-[#5A5A40] border border-[#889E81]/30">
+                {vitalsMetrics.fullyCompletedBeds} Beds (2/2 Photos)
+              </span>
+              {vitalsMetrics.partialBeds > 0 && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                  {vitalsMetrics.partialBeds} Beds (1/2 Photo)
+                </span>
+              )}
             </div>
           </div>
 
@@ -1425,10 +1448,10 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
           <div className="bg-white rounded-[24px] border border-[#E6E2D3] overflow-hidden shadow-xs">
             <div className="p-4 border-b border-[#E6E2D3] flex items-center justify-between bg-[#FAF9F6]">
               <span className="text-xs font-bold text-[#5A5A40] uppercase tracking-wider">
-                Daily Vitals &amp; Watermark Registry
+                Daily Vitals &amp; Watermark Registry ({vitalsMetrics.completedBeds} of {vitalsMetrics.totalBeds} Beds Done)
               </span>
               <span className="text-xs text-[#7C7C6D]">
-                Updated Today &bull; Real-time OCR &amp; Verification (Dual Photo Supported)
+                Target: 2 Photos = 1 Bed &bull; Real-time OCR &amp; Verification
               </span>
             </div>
 
@@ -1449,20 +1472,20 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 const caregiverName = morningRecord?.caregiverName || latestVitals?.caregiverName || 'Care Staff';
 
                 return (
-                  <div key={res.id} className="p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-[#FAF9F6]/60 transition-colors">
-                    <div className="flex items-center space-x-3 min-w-[200px]">
+                  <div key={res.id} className="p-3 sm:p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4 hover:bg-[#FAF9F6]/60 transition-colors w-full min-w-0">
+                    <div className="flex items-center space-x-3 w-full md:w-auto min-w-0">
                       <div className="w-10 h-10 rounded-2xl bg-[#F0ECE2] border border-[#E6E2D3] flex items-center justify-center font-bold text-xs text-[#5A5A40] shrink-0">
                         {res.roomNumber}
                       </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-[#5A5A40]">{res.fullName}</h4>
+                      <div className="min-w-0 truncate">
+                        <h4 className="text-sm font-bold text-[#5A5A40] truncate">{res.fullName}</h4>
                         <span className="text-[11px] text-[#8C8C7E]">{res.bedNumber} &bull; Age {res.age}</span>
                       </div>
                     </div>
 
                     {/* Vitals Telemetry Values */}
                     {hasVitals ? (
-                      <div className="grid grid-cols-4 gap-3 text-xs bg-[#F7F5F0] p-2.5 rounded-2xl border border-[#E6E2D3] min-w-[320px]">
+                      <div className="grid grid-cols-4 gap-2 sm:gap-3 text-xs bg-[#F7F5F0] p-2.5 rounded-2xl border border-[#E6E2D3] w-full md:w-auto min-w-0">
                         <div>
                           <span className="text-[9px] text-[#8C8C7E] block uppercase font-bold">BP</span>
                           <span className="font-bold text-[#5A5A40]">{bp || 'N/A'}</span>
@@ -1487,7 +1510,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                     )}
 
                     {/* Watermarked photos (Dual & Single Photo Support) & status */}
-                    <div className="flex items-center space-x-3 shrink-0">
+                    <div className="flex items-center space-x-3 shrink-0 flex-wrap gap-2">
                       <div className="flex items-center space-x-2">
                         {primaryPhoto ? (
                           <div
@@ -2599,7 +2622,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
             </div>
 
             <form onSubmit={handleCreateResident} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#5A5A40] block mb-1">
                     Full Legal Name:
@@ -2627,7 +2650,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#5A5A40] block mb-1">
                     Room Number:
@@ -2683,7 +2706,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#5A5A40] block mb-1">
                     Primary Family Contact Name:
@@ -2710,7 +2733,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#5A5A40] block mb-1">
                     Family Contact Email:
@@ -2778,7 +2801,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
             </div>
 
             <form onSubmit={handleSaveResidentModal} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#5A5A40] block mb-1">
                     Full Legal Name:
@@ -2804,7 +2827,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#5A5A40] block mb-1">
                     Room Number:
@@ -2870,7 +2893,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#5A5A40] block mb-1">
                     Primary Family Contact Name:
@@ -2895,7 +2918,7 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#5A5A40] block mb-1">
                     Family Contact Email:

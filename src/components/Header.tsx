@@ -34,72 +34,73 @@ export const Header: React.FC<HeaderProps> = ({
     setIsEditingName(false);
   };
   return (
-    <header className="bg-white/80 backdrop-blur-md border-b border-[#E6E2D3] sticky top-0 z-50 shadow-xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20">
+    <header className="bg-white/90 backdrop-blur-md border-b border-[#E6E2D3] sticky top-0 z-50 shadow-xs w-full max-w-full overflow-hidden">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16 sm:h-20 gap-2">
           {/* Logo & Facility Info */}
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-[#889E81] rounded-2xl flex items-center justify-center text-white shadow-xs">
-              <div className="w-5 h-5 border-2 border-white rounded-full flex items-center justify-center">
-                <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+          <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-[#889E81] rounded-xl sm:rounded-2xl flex items-center justify-center text-white shadow-xs shrink-0">
+              <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-white rounded-full flex items-center justify-center">
+                <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 bg-white rounded-full"></div>
               </div>
             </div>
             <div>
-              <div className="flex items-center space-x-2">
-                <span className="font-serif text-2xl font-semibold tracking-tight text-[#5A5A40]">
+              <div className="flex items-center space-x-1.5">
+                <span className="font-serif text-lg sm:text-2xl font-semibold tracking-tight text-[#5A5A40] whitespace-nowrap">
                   Care Connect
                 </span>
               </div>
-              <p className="text-xs text-[#7C7C6D] hidden sm:block">
-                Family Transparency & Care Communication Protocol
+              <p className="text-[10px] sm:text-xs text-[#7C7C6D] hidden md:block">
+                Family Transparency &amp; Care Communication Protocol
               </p>
             </div>
           </div>
 
           {/* Role Switcher */}
-          <div className="flex items-center space-x-1.5 bg-[#F0ECE2] p-1 rounded-2xl border border-[#E6E2D3]">
+          <div className="flex items-center space-x-1 bg-[#F0ECE2] p-1 rounded-xl sm:rounded-2xl border border-[#E6E2D3] shrink-0">
             <button
               id="role-btn-caregiver"
               onClick={() => onSelectRole('caregiver')}
-              className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${
+              className={`flex items-center space-x-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg sm:rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${
                 currentUser.role === 'caregiver'
                   ? 'bg-white text-[#5A5A40] shadow-xs border border-[#E6E2D3]'
                   : 'text-[#7C7C6D] hover:text-[#4A4A40]'
               }`}
             >
-              <div className="w-2 h-2 rounded-full bg-[#889E81]"></div>
-              <span>Caregiver / Nurse</span>
+              <div className="w-2 h-2 rounded-full bg-[#889E81] shrink-0"></div>
+              <span className="hidden sm:inline">Caregiver</span>
+              <span className="sm:hidden">Nurse</span>
             </button>
 
             <button
               id="role-btn-family"
               onClick={() => onSelectRole('family')}
-              className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${
+              className={`flex items-center space-x-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg sm:rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${
                 currentUser.role === 'family'
                   ? 'bg-white text-[#5A5A40] shadow-xs border border-[#E6E2D3]'
                   : 'text-[#7C7C6D] hover:text-[#4A4A40]'
               }`}
             >
-              <Users className="w-3.5 h-3.5 text-[#889E81]" />
+              <Users className="w-3.5 h-3.5 text-[#889E81] shrink-0" />
               <span>Family</span>
             </button>
 
             <button
               id="role-btn-admin"
               onClick={() => onSelectRole('admin')}
-              className={`relative flex items-center space-x-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${
+              className={`relative flex items-center space-x-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg sm:rounded-xl text-xs font-semibold transition-all duration-150 cursor-pointer ${
                 currentUser.role === 'admin'
                   ? 'bg-white text-[#5A5A40] shadow-xs border border-[#E6E2D3]'
                   : 'text-[#7C7C6D] hover:text-[#4A4A40]'
               }`}
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-[#889E81]" />
+              <ShieldCheck className="w-3.5 h-3.5 text-[#889E81] shrink-0" />
               <span>Admin</span>
               {adminAuthSession?.isAuthenticated && (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Verified Admin Session" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Verified Admin Session" />
               )}
               {pendingInquiriesCount > 0 && (
-                <span className="w-4 h-4 rounded-full bg-[#C27D60] text-white text-[10px] flex items-center justify-center font-bold">
+                <span className="w-4 h-4 rounded-full bg-[#C27D60] text-white text-[9px] sm:text-[10px] flex items-center justify-center font-bold shrink-0">
                   {pendingInquiriesCount}
                 </span>
               )}
@@ -107,14 +108,14 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* User Profile Badge & Admin Session Status */}
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
             {currentUser.role === 'admin' && adminAuthSession?.isAuthenticated && onLockAdminSession && (
               <button
                 type="button"
                 id="header-lock-admin-btn"
                 onClick={onLockAdminSession}
                 title="Lock Admin Portal & Sign Out"
-                className="hidden md:flex items-center space-x-1.5 px-3 py-1.5 bg-[#FAF9F6] hover:bg-rose-50 border border-[#E6E2D3] hover:border-rose-300 text-[#7C7C6D] hover:text-rose-700 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+                className="hidden lg:flex items-center space-x-1.5 px-3 py-1.5 bg-[#FAF9F6] hover:bg-rose-50 border border-[#E6E2D3] hover:border-rose-300 text-[#7C7C6D] hover:text-rose-700 rounded-xl text-xs font-semibold transition-all cursor-pointer"
               >
                 <Lock className="w-3.5 h-3.5" />
                 <span>Lock Portal</span>
@@ -122,14 +123,14 @@ export const Header: React.FC<HeaderProps> = ({
             )}
 
             {isEditingName ? (
-              <form onSubmit={handleSaveName} className="flex items-center space-x-1.5 bg-white p-1 rounded-xl border border-[#889E81] shadow-xs">
+              <form onSubmit={handleSaveName} className="flex items-center space-x-1 bg-white p-1 rounded-xl border border-[#889E81] shadow-xs">
                 <input
                   type="text"
                   value={editedName}
                   onChange={(e) => setEditedName(e.target.value)}
                   placeholder="Enter name..."
                   autoFocus
-                  className="px-2 py-1 text-xs text-[#5A5A40] font-medium outline-none rounded-lg w-36 bg-[#FAF9F6] border border-[#E6E2D3]"
+                  className="px-2 py-1 text-xs text-[#5A5A40] font-medium outline-none rounded-lg w-28 sm:w-36 bg-[#FAF9F6] border border-[#E6E2D3]"
                 />
                 <button
                   type="submit"
@@ -154,7 +155,7 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="text-right hidden sm:block group relative">
                 <div className="flex items-center justify-end space-x-1">
                   <div className="text-xs font-semibold text-[#5A5A40] flex items-center space-x-1">
-                    <span>{currentUser.name}</span>
+                    <span className="truncate max-w-[120px]">{currentUser.name}</span>
                     {currentUser.role === 'admin' && adminAuthSession?.isAuthenticated && (
                       <span className="text-[10px] font-bold px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded-md border border-emerald-300">
                         Verified
@@ -173,15 +174,15 @@ export const Header: React.FC<HeaderProps> = ({
                   )}
                 </div>
                 <div className="text-[11px] text-[#7C7C6D] flex items-center justify-end space-x-1">
-                  <span>{currentUser.title || (currentUser.role === 'admin' ? 'Facility Administrator' : currentUser.role)}</span>
+                  <span className="truncate max-w-[140px]">{currentUser.title || (currentUser.role === 'admin' ? 'Facility Administrator' : currentUser.role)}</span>
                 </div>
               </div>
             )}
-            <div className="relative">
+            <div className="relative shrink-0">
               <div
                 onClick={() => onUpdateUserName && setIsEditingName(!isEditingName)}
                 title="Click to edit name"
-                className="w-10 h-10 rounded-full bg-[#EBF1EA] text-[#5A5A40] font-bold text-xs flex items-center justify-center ring-2 ring-[#889E81]/30 border border-white cursor-pointer select-none hover:bg-[#DDE7DC] transition-colors"
+                className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#EBF1EA] text-[#5A5A40] font-bold text-xs flex items-center justify-center ring-2 ring-[#889E81]/30 border border-white cursor-pointer select-none hover:bg-[#DDE7DC] transition-colors shrink-0"
               >
                 {currentUser.name
                   ? currentUser.name
