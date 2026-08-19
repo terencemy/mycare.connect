@@ -66,35 +66,10 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
 
   // Filter logs & messages for active resident with resilient matching (Only approved logs are visible to family)
   const residentLogs = careLogs.filter((l) => isResidentMatch(activeResident, l) && l.approvalStatus === 'approved');
-  const residentMorningVitals = morningVitals.filter((v) => isResidentMatch(activeResident, v));
   const residentMessages = familyMessages.filter((m) => isResidentMatch(activeResident, m));
 
   // Consolidate latest verified morning vitals from Morning Rounds and Care Logs
   const activeVitals = getLatestVitalsForResident(activeResident, morningVitals, careLogs);
-
-  // Build unified chronological timeline of care moments and verified clinical vitals rounds
-  interface TimelineEntry {
-    id: string;
-    type: 'care_log' | 'morning_vitals';
-    timestamp: string;
-    careLog?: CareLog;
-    morningVital?: MorningVitalsRecord;
-  }
-
-  const timelineEntries: TimelineEntry[] = [
-    ...residentLogs.map((l) => ({
-      id: `log_${l.id}`,
-      type: 'care_log' as const,
-      timestamp: l.timestamp,
-      careLog: l,
-    })),
-    ...residentMorningVitals.map((v) => ({
-      id: `vtl_${v.id}`,
-      type: 'morning_vitals' as const,
-      timestamp: v.recordedAt,
-      morningVital: v,
-    })),
-  ].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
 
   // Message modal state
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
@@ -205,8 +180,8 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
         </div>
       </div>
 
-      {/* iPad / Tablet Quick Daily Vitals Banner (Visible on md & above for immediate glance, and responsive for mobile) */}
-      <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-[24px] p-4.5 shadow-xs">
+      {/* SECTION 1: Dedicated Daily Vital Signs Section */}
+      <section className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-[24px] p-5 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E6E2D3]">
           <div className="flex items-center space-x-2.5">
             <div className="w-8 h-8 rounded-xl bg-[#889E81] text-white flex items-center justify-center shadow-xs shrink-0">
@@ -262,8 +237,8 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
           </div>
         </div>
 
-        {/* Vitals Photo & Key Metrics Section */}
-        <div className="pt-3 space-y-3">
+        {/* Vitals Photo Gallery & Telemetry Numbers */}
+        <div className="space-y-3">
           {/* Prominent Clinical Monitor Photo Bar */}
           {activeVitals?.photoUrl && (
             <div className="bg-white border border-[#E6E2D3] rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
@@ -391,437 +366,176 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
               </div>
             )}
           </div>
-        </div>
-      </div>
 
-      {/* Main Grid: Left Timeline (8 cols on lg / 7 cols on md iPad), Right Resident Health Card (4 cols on lg / 5 cols on md iPad) */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-        {/* Timeline Updates */}
+          {/* Vitals Clinical Notes if recorded */}
+          {activeVitals?.notes && (
+            <div className="bg-white p-3 rounded-2xl border border-[#E6E2D3] text-xs text-[#5A5A40]">
+              <span className="text-[10px] text-[#8C8C7E] uppercase font-bold block mb-0.5">Caregiver Clinical Note:</span>
+              <p>{activeVitals.notes}</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* SECTION 2: Daily Moments & Care Updates Section */}
+      <section className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        {/* Left Column: Daily Moments & Care Feed */}
         <div className="md:col-span-7 lg:col-span-8 space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-[#5A5A40] uppercase tracking-wider flex items-center space-x-2">
               <Calendar className="w-4 h-4 text-[#889E81]" />
-              <span>Daily Moments &amp; Care Updates</span>
+              <span>Daily Moments &amp; Care</span>
             </h2>
             <span className="text-xs text-[#7C7C6D] font-medium">
-              {timelineEntries.length} updates logged
+              {residentLogs.length} updates logged
             </span>
           </div>
 
-          {timelineEntries.length === 0 ? (
+          {residentLogs.length === 0 ? (
             <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-8 text-center text-[#7C7C6D]">
               <Sparkles className="w-8 h-8 mx-auto text-[#889E81] mb-2 opacity-60" />
-              <p className="text-sm font-semibold text-[#5A5A40]">No daily logs posted yet for this resident.</p>
+              <p className="text-sm font-semibold text-[#5A5A40]">No daily care moments posted yet for this resident.</p>
               <p className="text-xs text-[#8C8C7E] mt-1">
                 The on-duty care staff will publish a photo update soon!
               </p>
             </div>
           ) : (
-            timelineEntries.map((entry) => {
-              if (entry.type === 'morning_vitals' && entry.morningVital) {
-                const vital = entry.morningVital;
-                return (
-                  <article
-                    key={entry.id}
-                    className="bg-white rounded-[24px] border border-[#889E81]/40 overflow-hidden shadow-xs space-y-4 p-5 hover:border-[#889E81] transition-all"
+            residentLogs.map((log) => (
+              <article
+                key={log.id}
+                className="bg-white rounded-[24px] border border-[#E6E2D3] overflow-hidden shadow-xs space-y-4 p-5 hover:border-[#889E81]/60 transition-all"
+              >
+                {/* Author Bar */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 rounded-full bg-[#EBF1EA] flex items-center justify-center text-[#5A5A40] font-bold text-xs border border-[#889E81]/30">
+                      {log.caregiverName ? log.caregiverName.charAt(0) : 'C'}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-[#5A5A40]">
+                        {log.caregiverName || 'Caregiver Staff'}
+                      </div>
+                      <div className="text-[11px] text-[#8C8C7E]">
+                        {new Date(log.timestamp).toLocaleDateString(undefined, {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })}{' '}
+                        at{' '}
+                        {new Date(log.timestamp).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#F0ECE2] text-[#5A5A40] border border-[#E6E2D3] flex items-center space-x-1">
+                    <span>Mood:</span>
+                    <strong className="capitalize">{log.mood || 'Cheerful'}</strong>
+                  </span>
+                </div>
+
+                {/* Media Image */}
+                {log.mediaUrl && (
+                  <div
+                    onClick={() => setSelectedPreviewImage(log.mediaUrl!)}
+                    className="rounded-2xl overflow-hidden bg-[#2D2D24] aspect-video relative group cursor-pointer"
                   >
-                    {/* Author & Protocol Header */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-9 h-9 rounded-full bg-[#EBF1EA] flex items-center justify-center text-[#5A5A40] font-bold text-xs border border-[#889E81]/30">
-                          {vital.caregiverName ? vital.caregiverName.charAt(0) : 'N'}
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-[#5A5A40] flex items-center space-x-1.5">
-                            <span>{vital.caregiverName || 'Care Staff'}</span>
-                            <span className="bg-[#EBF1EA] text-[#5A5A40] text-[10px] font-extrabold px-2 py-0.2 rounded-full border border-[#889E81]/30">
-                              Clinical Vitals Round
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-[#8C8C7E]">
-                            {vital.formattedDate} at {vital.formattedTime}
-                          </div>
-                        </div>
-                      </div>
-
-                      <span className="text-[11px] font-extrabold text-[#5A5A40] bg-[#EBF1EA] px-3 py-1 rounded-full border border-[#889E81]/40 flex items-center space-x-1">
-                        <Check className="w-3.5 h-3.5 text-[#889E81]" />
-                        <span>Audited Vitals</span>
+                    <img
+                      src={log.mediaUrl}
+                      alt={log.residentFullName}
+                      className="w-full h-full object-cover group-hover:scale-101 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <span className="text-white text-xs font-bold bg-black/60 px-3 py-1.5 rounded-full flex items-center space-x-1.5 backdrop-blur-xs">
+                        <ZoomIn className="w-3.5 h-3.5" />
+                        <span>Enlarge Photo</span>
                       </span>
                     </div>
+                  </div>
+                )}
 
-                    {/* Watermarked Clinical Monitor Photo(s) */}
-                    {(vital.vitalsPhotoUrl || vital.secondaryVitalsPhotoUrl) && (
-                      <div className="space-y-2">
-                        <div className={`grid ${vital.secondaryVitalsPhotoUrl ? 'grid-cols-2' : 'grid-cols-1'} gap-2.5`}>
-                          {vital.vitalsPhotoUrl && (
-                            <div
-                              onClick={() => setSelectedPreviewImage(vital.vitalsPhotoUrl)}
-                              className="relative group rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer aspect-video"
-                            >
-                              <img
-                                src={vital.vitalsPhotoUrl}
-                                alt="Verified Clinical Monitor"
-                                className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
-                              />
-                              <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <span className="text-white text-[11px] font-bold bg-black/60 px-2.5 py-1 rounded-full flex items-center space-x-1 backdrop-blur-xs">
-                                  <ZoomIn className="w-3.5 h-3.5" />
-                                  <span>{vital.secondaryVitalsPhotoUrl ? 'Monitor 1' : 'View Watermark Photo'}</span>
-                                </span>
-                              </div>
-                              <div className="absolute bottom-1.5 left-1.5 right-1.5 bg-black/75 backdrop-blur-xs text-white text-[9px] font-mono px-2 py-0.5 rounded flex items-center justify-between">
-                                <span className="truncate">{vital.deviceType || 'Vital Signs Monitor'}</span>
-                                <span className="text-emerald-400 font-bold">{vital.formattedTime}</span>
-                              </div>
-                            </div>
-                          )}
+                {/* AI Reassuring Family Narrative */}
+                <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-2xl p-4 space-y-2">
+                  <div className="flex items-center space-x-1.5 text-[#5A5A40] font-bold text-xs">
+                    <Sparkles className="w-4 h-4 text-[#889E81]" />
+                    <span>Today&apos;s Reassuring Update</span>
+                  </div>
+                  <p className="text-xs text-[#4A4A40] leading-relaxed font-normal">
+                    &ldquo;{log.aiGeneratedFamilySummary}&rdquo;
+                  </p>
+                </div>
 
-                          {vital.secondaryVitalsPhotoUrl && (
-                            <div
-                              onClick={() => setSelectedPreviewImage(vital.secondaryVitalsPhotoUrl!)}
-                              className="relative group rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer aspect-video"
-                            >
-                              <img
-                                src={vital.secondaryVitalsPhotoUrl}
-                                alt="Monitor 2"
-                                className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
-                              />
-                              <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <span className="text-white text-[11px] font-bold bg-black/60 px-2.5 py-1 rounded-full flex items-center space-x-1 backdrop-blur-xs">
-                                  <ZoomIn className="w-3.5 h-3.5" />
-                                  <span>Monitor 2</span>
-                                </span>
-                              </div>
-                              <div className="absolute bottom-1.5 left-1.5 right-1.5 bg-black/75 backdrop-blur-xs text-white text-[9px] font-mono px-2 py-0.5 rounded flex items-center justify-between">
-                                <span>Monitor 2</span>
-                                <span className="text-emerald-300 font-bold">Verified</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Vitals Telemetry Numbers */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs">
-                      <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                        <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">Blood Pressure</span>
-                        <span className="font-bold text-[#5A5A40]">{vital.readings?.bloodPressure || '120/80'} mmHg</span>
-                      </div>
-                      <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                        <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">Heart Pulse</span>
-                        <span className="font-bold text-[#5A5A40]">{vital.readings?.pulseRate !== undefined ? vital.readings.pulseRate : '72'} bpm</span>
-                      </div>
-                      <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                        <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">Oxygen (SpO2)</span>
-                        <span className="font-bold text-[#5A5A40]">{vital.readings?.spo2 !== undefined ? vital.readings.spo2 : '98'}%</span>
-                      </div>
-                      <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                        <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">Body Temp</span>
-                        <span className="font-bold text-[#5A5A40]">{vital.readings?.temperature !== undefined ? vital.readings.temperature : '36.6'}°C</span>
-                      </div>
-                      {vital.readings?.bloodSugar !== undefined && (
-                        <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3] col-span-2 sm:col-span-4">
-                          <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">Fasting Blood Sugar</span>
-                          <span className="font-bold text-[#5A5A40]">{vital.readings.bloodSugar} mmol/L</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Notes */}
-                    {vital.notes && (
-                      <p className="text-xs text-[#5A5A40] bg-[#FAF9F6] p-3 rounded-xl border border-[#E6E2D3]">
-                        {vital.notes}
-                      </p>
-                    )}
-
-                    {/* Footer */}
-                    <div className="flex items-center justify-between pt-2 border-t border-[#E6E2D3] text-xs">
-                      <div className="flex items-center space-x-1 text-[#889E81] text-[11px] font-semibold">
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Clinically Certified by {vital.caregiverName}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsMessageModalOpen(true)}
-                        className="text-[#889E81] hover:text-[#5A5A40] font-medium flex items-center space-x-1 cursor-pointer"
-                      >
-                        <span>Questions about vitals?</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </article>
-                );
-              }
-
-              const log = entry.careLog!;
-              return (
-                <article
-                  key={entry.id}
-                  className="bg-white rounded-[24px] border border-[#E6E2D3] overflow-hidden shadow-xs space-y-4 p-5 hover:border-[#889E81]/60 transition-all"
-                >
-                  {/* Author Bar */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-9 h-9 rounded-full bg-[#EBF1EA] flex items-center justify-center text-[#5A5A40] font-bold text-xs border border-[#889E81]/30">
-                        {log.caregiverName ? log.caregiverName.charAt(0) : 'C'}
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-[#5A5A40]">
-                          {log.caregiverName || 'Caregiver Staff'}
-                        </div>
-                        <div className="text-[11px] text-[#8C8C7E]">
-                          {new Date(log.timestamp).toLocaleDateString(undefined, {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                          })}{' '}
-                          at{' '}
-                          {new Date(log.timestamp).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#F0ECE2] text-[#5A5A40] border border-[#E6E2D3] flex items-center space-x-1">
-                      <span>Mood:</span>
-                      <strong className="capitalize">{log.mood || 'Cheerful'}</strong>
+                {/* Telemetry Stats Pills */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 pt-1 text-xs">
+                  <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
+                    <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
+                      Breakfast
                     </span>
+                    <span className="font-bold text-[#5A5A40]">{log.meals?.breakfast || 'N/A'}</span>
                   </div>
-
-                  {/* Media Image */}
-                  {log.mediaUrl && (
-                    <div className="rounded-2xl overflow-hidden bg-[#2D2D24] aspect-video relative group">
-                      <img
-                        src={log.mediaUrl}
-                        alt={log.residentFullName}
-                        className="w-full h-full object-cover group-hover:scale-101 transition-transform duration-300"
-                      />
-                    </div>
-                  )}
-
-                  {/* AI Reassuring Family Narrative */}
-                  <div className="bg-[#FAF9F6] border border-[#E6E2D3] rounded-2xl p-4 space-y-2">
-                    <div className="flex items-center space-x-1.5 text-[#5A5A40] font-bold text-xs">
-                      <Sparkles className="w-4 h-4 text-[#889E81]" />
-                      <span>Today&apos;s Reassuring Update</span>
-                    </div>
-                    <p className="text-xs text-[#4A4A40] leading-relaxed font-normal">
-                      &ldquo;{log.aiGeneratedFamilySummary}&rdquo;
-                    </p>
+                  <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
+                    <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
+                      Lunch
+                    </span>
+                    <span className="font-bold text-[#5A5A40]">{log.meals?.lunch || 'N/A'}</span>
                   </div>
-
-                  {/* Telemetry Stats Pills */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 pt-1 text-xs">
-                    <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                      <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
-                        Breakfast
-                      </span>
-                      <span className="font-bold text-[#5A5A40]">{log.meals?.breakfast || 'N/A'}</span>
-                    </div>
-                    <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                      <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
-                        Lunch
-                      </span>
-                      <span className="font-bold text-[#5A5A40]">{log.meals?.lunch || 'N/A'}</span>
-                    </div>
-                    <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                      <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
-                        Dinner
-                      </span>
-                      <span className="font-bold text-[#5A5A40]">{log.meals?.dinner || 'N/A'}</span>
-                    </div>
-                    <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                      <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
-                        Hydration
-                      </span>
-                      <span className="font-bold text-[#889E81]">{log.meals?.hydrationMl || 800} ml</span>
-                    </div>
-                    <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3] col-span-2 sm:col-span-1">
-                      <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
-                        Vitals (BP &amp; Pulse)
-                      </span>
-                      <span className="font-bold text-[#5A5A40]">
-                        {log.vitals?.bloodPressure ? `BP ${log.vitals.bloodPressure}` : 'BP 120/80'}
-                        {log.vitals?.pulseRate ? ` • ${log.vitals.pulseRate} bpm` : ''}
-                      </span>
-                    </div>
+                  <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
+                    <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
+                      Dinner
+                    </span>
+                    <span className="font-bold text-[#5A5A40]">{log.meals?.dinner || 'N/A'}</span>
                   </div>
-
-                  {/* Activity Badges */}
-                  {log.activities && log.activities.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {log.activities.map((act, i) => (
-                        <span
-                          key={i}
-                          className="text-[11px] bg-[#F0ECE2] text-[#5A5A40] font-medium px-2.5 py-1 rounded-full border border-[#E6E2D3]"
-                        >
-                          {act}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Interactions Footer */}
-                  <div className="flex items-center justify-between pt-2 border-t border-[#E6E2D3] text-xs">
-                    <button
-                      type="button"
-                      onClick={() => onLikeLog(log.id)}
-                      className="flex items-center space-x-1.5 text-rose-700 hover:text-rose-800 font-semibold transition-colors px-2 py-1 rounded-lg hover:bg-rose-50 cursor-pointer"
-                    >
-                      <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
-                      <span>Send Love &amp; Gratitude ({log.familyLikesCount || 0})</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsMessageModalOpen(true)}
-                      className="text-[#889E81] hover:text-[#5A5A40] font-medium flex items-center space-x-1 cursor-pointer"
-                    >
-                      <span>Have a question about this update?</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
+                    <span className="text-[10px] text-[#8C8C7E] font-bold uppercase block">
+                      Hydration
+                    </span>
+                    <span className="font-bold text-[#889E81]">{log.meals?.hydrationMl || 800} ml</span>
                   </div>
-                </article>
-              );
-            })
+                </div>
+
+                {/* Activity Badges */}
+                {log.activities && log.activities.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {log.activities.map((act, i) => (
+                      <span
+                        key={i}
+                        className="text-[11px] bg-[#F0ECE2] text-[#5A5A40] font-medium px-2.5 py-1 rounded-full border border-[#E6E2D3]"
+                      >
+                        {act}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Interactions Footer */}
+                <div className="flex items-center justify-between pt-2 border-t border-[#E6E2D3] text-xs">
+                  <button
+                    type="button"
+                    onClick={() => onLikeLog(log.id)}
+                    className="flex items-center space-x-1.5 text-rose-700 hover:text-rose-800 font-semibold transition-colors px-2 py-1 rounded-lg hover:bg-rose-50 cursor-pointer"
+                  >
+                    <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
+                    <span>Send Love &amp; Gratitude ({log.familyLikesCount || 0})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsMessageModalOpen(true)}
+                    className="text-[#889E81] hover:text-[#5A5A40] font-medium flex items-center space-x-1 cursor-pointer"
+                  >
+                    <span>Have a question about this update?</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </article>
+            ))
           )}
         </div>
 
         {/* Right Column: Resident Medical Profile & Intercepted Message Status (4 cols on lg / 5 cols on md iPad) */}
         <div className="md:col-span-5 lg:col-span-4 space-y-6">
-          {/* Daily Verified Vital Signs Card */}
-          <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#5A5A40] flex items-center space-x-1.5">
-                <Clock className="w-4 h-4 text-[#889E81]" />
-                <span>Daily Vital Signs</span>
-              </h3>
-              {activeVitals ? (
-                <span className="text-[10px] font-bold text-[#889E81] bg-[#EBF1EA] px-2 py-0.5 rounded-full border border-[#889E81]/30 flex items-center space-x-1">
-                  <Check className="w-3 h-3" />
-                  <span>Verified {activeVitals.formattedTime}</span>
-                </span>
-              ) : (
-                <span className="text-[10px] font-semibold text-[#8C8C7E] bg-[#FAF9F6] px-2 py-0.5 rounded-full border border-[#E6E2D3]">
-                  Pending Daily Round
-                </span>
-              )}
-            </div>
-
-            {activeVitals ? (
-              <div className="space-y-3 pt-1">
-                {/* Watermarked photo thumbnail(s) */}
-                {activeVitals.photoUrl && (
-                  activeVitals.secondaryPhotoUrl ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      <div
-                        onClick={() => setSelectedPreviewImage(activeVitals.photoUrl!)}
-                        className="relative group rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer aspect-4/3"
-                      >
-                        <img
-                          src={activeVitals.photoUrl}
-                          alt="Monitor 1"
-                          className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
-                        />
-                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <span className="text-white text-[10px] font-bold bg-black/60 px-2 py-1 rounded-full flex items-center space-x-1 backdrop-blur-xs">
-                            <ZoomIn className="w-3 h-3" />
-                            <span>Monitor 1</span>
-                          </span>
-                        </div>
-                        <div className="absolute bottom-1 left-1 right-1 bg-black/75 backdrop-blur-xs text-white text-[8px] font-mono px-1.5 py-0.5 rounded flex items-center justify-between">
-                          <span>Monitor 1</span>
-                          <span className="text-emerald-400 font-bold">{activeVitals.formattedTime}</span>
-                        </div>
-                      </div>
-
-                      <div
-                        onClick={() => setSelectedPreviewImage(activeVitals.secondaryPhotoUrl!)}
-                        className="relative group rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer aspect-4/3"
-                      >
-                        <img
-                          src={activeVitals.secondaryPhotoUrl}
-                          alt="Monitor 2"
-                          className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
-                        />
-                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <span className="text-white text-[10px] font-bold bg-black/60 px-2 py-1 rounded-full flex items-center space-x-1 backdrop-blur-xs">
-                            <ZoomIn className="w-3 h-3" />
-                            <span>Monitor 2</span>
-                          </span>
-                        </div>
-                        <div className="absolute bottom-1 left-1 right-1 bg-black/75 backdrop-blur-xs text-white text-[8px] font-mono px-1.5 py-0.5 rounded flex items-center justify-between">
-                          <span>Monitor 2</span>
-                          <span className="text-emerald-300 font-bold">Verified</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div
-                      onClick={() => setSelectedPreviewImage(activeVitals.photoUrl!)}
-                      className="relative group rounded-2xl overflow-hidden border border-[#E6E2D3] bg-[#2C332A] cursor-pointer"
-                    >
-                      <img
-                        src={activeVitals.photoUrl}
-                        alt="Watermarked Vital Sign Reading"
-                        className="w-full h-36 object-cover group-hover:scale-102 transition-transform duration-300"
-                      />
-                      <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <span className="text-white text-xs font-bold bg-black/60 px-3 py-1.5 rounded-full flex items-center space-x-1.5 backdrop-blur-xs">
-                          <ZoomIn className="w-3.5 h-3.5" />
-                          <span>View Verified Watermark</span>
-                        </span>
-                      </div>
-                      <div className="absolute bottom-2 left-2 right-2 bg-black/75 backdrop-blur-xs text-white text-[9px] font-mono px-2 py-1 rounded-lg flex items-center justify-between">
-                        <span className="truncate">Timestamp Watermarked</span>
-                        <span className="text-emerald-400 font-bold">{activeVitals.formattedTime}</span>
-                      </div>
-                    </div>
-                  )
-                )}
-
-                {/* Vitals metrics */}
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                    <span className="text-[10px] text-[#8C8C7E] uppercase block font-semibold">Blood Pressure</span>
-                    <span className="text-sm font-bold text-[#5A5A40]">{activeVitals.bloodPressure || '120/80'} mmHg</span>
-                  </div>
-                  <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                    <span className="text-[10px] text-[#8C8C7E] uppercase block font-semibold">Heart Pulse</span>
-                    <span className="text-sm font-bold text-[#5A5A40]">{activeVitals.pulseRate !== undefined ? activeVitals.pulseRate : '72'} bpm</span>
-                  </div>
-                  <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                    <span className="text-[10px] text-[#8C8C7E] uppercase block font-semibold">Oxygen (SpO2)</span>
-                    <span className="text-sm font-bold text-[#5A5A40]">{activeVitals.spo2 !== undefined ? activeVitals.spo2 : '98'}%</span>
-                  </div>
-                  <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3]">
-                    <span className="text-[10px] text-[#8C8C7E] uppercase block font-semibold">Body Temp</span>
-                    <span className="text-sm font-bold text-[#5A5A40]">{activeVitals.temperature !== undefined ? activeVitals.temperature : '36.6'}°C</span>
-                  </div>
-                  {activeVitals.bloodSugar !== undefined && (
-                    <div className="bg-[#FAF9F6] p-2.5 rounded-xl border border-[#E6E2D3] col-span-2">
-                      <span className="text-[10px] text-[#8C8C7E] uppercase block font-semibold">Fasting Blood Sugar</span>
-                      <span className="text-sm font-bold text-[#5A5A40]">{activeVitals.bloodSugar} mmol/L</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="text-[11px] text-[#7C7C6D] flex items-center justify-between pt-1 border-t border-[#E6E2D3]">
-                  <span>Audited by: <strong>{activeVitals.caregiverName}</strong></span>
-                  <span className="text-[#889E81] font-semibold">{activeVitals.formattedDate}</span>
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-[#7C7C6D] py-2">
-                Daily clinical vital signs round is conducted daily. Watermarked photo confirmation will appear here once submitted by nursing staff.
-              </p>
-            )}
-          </div>
-
           {/* Quick Care Plan Card */}
           <div className="bg-white rounded-[24px] border border-[#E6E2D3] p-5 shadow-xs space-y-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#5A5A40] flex items-center space-x-1.5">
@@ -920,7 +634,7 @@ export const FamilyPortalView: React.FC<FamilyPortalViewProps> = ({
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* MODAL: Send Message to Facility (Intercepted to Admin) */}
       {isMessageModalOpen && (
