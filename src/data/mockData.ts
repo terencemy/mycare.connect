@@ -46,9 +46,9 @@ export const INITIAL_FAMILY_MESSAGES: FamilyMessage[] = [];
 
 export const SAMPLE_VITALS_PRESETS = [
   {
-    label: 'Digital BP & Pulse Monitor (Omron M3)',
+    label: 'BP & Pulse Monitor (Omron M3)',
     imageUrl: '',
-    deviceType: 'Digital Upper-Arm Blood Pressure Monitor',
+    deviceType: 'Upper-Arm Blood Pressure Monitor',
     suggestedReadings: {
       bloodPressure: '118/76',
       pulseRate: 72,
@@ -82,9 +82,9 @@ export const SAMPLE_VITALS_PRESETS = [
     }
   },
   {
-    label: 'Infrared Digital Tympanic Thermometer',
+    label: 'Infrared Tympanic Thermometer',
     imageUrl: '',
-    deviceType: 'Braun Digital Ear Thermometer',
+    deviceType: 'Braun Ear Thermometer',
     suggestedReadings: {
       bloodPressure: '120/78',
       pulseRate: 70,
