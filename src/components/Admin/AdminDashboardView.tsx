@@ -617,7 +617,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     (m) => m.status === 'responded' || m.status === 'resolved'
   );
 
-  const SUPABASE_MIGRATION_SQL = `-- Quick Schema Fix / Migration (Run this if you get 'column not found' or schema cache error)
+  const SUPABASE_MIGRATION_SQL = `-- Quick Schema Fix / Migration & Full Delete Alignment
 ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS admission_date DATE DEFAULT CURRENT_DATE;
 ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS photo_url TEXT;
 ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS medical_notes TEXT;
@@ -628,11 +628,31 @@ ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS family_contact_name TEXT D
 ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS family_contact_relation TEXT DEFAULT 'Family Member';
 ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS family_contact_email TEXT;
 ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS family_contact_phone TEXT;
+ALTER TABLE public.residents ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
 
--- Reload PostgREST schema cache
+-- 1. Grant Full Delete & Write Permissions across RLS
+GRANT ALL ON public.residents TO anon, authenticated, service_role;
+DROP POLICY IF EXISTS "Allow public delete on residents" ON public.residents;
+CREATE POLICY "Allow public delete on residents" ON public.residents FOR DELETE USING (true);
+DROP POLICY IF EXISTS "Allow public update on residents" ON public.residents;
+CREATE POLICY "Allow public update on residents" ON public.residents FOR UPDATE USING (true);
+
+-- 2. Immediately purge any deactivated / deleted residents (e.g. Jack Ong) from the table
+DELETE FROM public.residents WHERE is_active = false;
+
+-- 3. Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';`;
 
   const [copiedMigrationSql, setCopiedMigrationSql] = useState(false);
+  const [copiedDeleteSql, setCopiedDeleteSql] = useState(false);
+
+  const SUPABASE_DELETE_POLICY_SQL = `-- Run this in Supabase SQL Editor to allow physical deletions from the portal:
+GRANT ALL ON public.residents TO anon, authenticated, service_role;
+DROP POLICY IF EXISTS "Allow public delete on residents" ON public.residents;
+CREATE POLICY "Allow public delete on residents" ON public.residents FOR DELETE USING (true);
+
+-- Instantly delete any removed residents (such as Jack Ong)
+DELETE FROM public.residents WHERE is_active = false;`;
 
   const SUPABASE_SQL_SCHEMA = `-- PostgreSQL & Supabase DDL for Care Connect Family Transparency SaaS
 
@@ -2265,10 +2285,10 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
               <div>
                 <h3 className="text-sm font-serif font-bold text-[#5A5A40] flex items-center space-x-2">
                   <Sparkles className="w-4 h-4 text-[#889E81]" />
-                  <span>Quick Fix Migration (For Existing Supabase Tables)</span>
+                  <span>Quick Fix Migration &amp; Full Delete Permissions</span>
                 </h3>
                 <p className="text-xs text-[#7C7C6D]">
-                  If your table was already created and you see a column notice like <code className="text-[#5A5A40] bg-[#F0ECE2] px-1 py-0.5 rounded font-mono">admission_date</code>, run this snippet to add any missing columns and refresh PostgREST:
+                  Run this snippet in your Supabase SQL Editor to add missing columns, enable full deletion policies on Row Level Security (RLS), and purge inactive residents:
                 </p>
               </div>
 
@@ -2282,12 +2302,44 @@ CREATE POLICY "Allow public update on family_messages" ON public.family_messages
                 className="px-3.5 py-2 bg-[#889E81] hover:bg-[#778E70] text-white rounded-full text-xs font-semibold flex items-center space-x-1.5 shadow-xs transition-colors cursor-pointer self-start sm:self-auto shrink-0"
               >
                 {copiedMigrationSql ? <Check className="w-3.5 h-3.5" /> : <FileCode className="w-3.5 h-3.5" />}
-                <span>{copiedMigrationSql ? 'Copied Migration SQL!' : 'Copy Migration SQL'}</span>
+                <span>{copiedMigrationSql ? 'Copied Migration SQL!' : 'Copy Migration & Delete SQL'}</span>
               </button>
             </div>
 
             <pre className="bg-[#FAF9F6] text-[#2D2D24] p-3.5 rounded-xl text-xs font-mono overflow-x-auto leading-relaxed border border-[#E6E2D3]">
               {SUPABASE_MIGRATION_SQL}
+            </pre>
+          </div>
+
+          {/* Dedicated Physical Delete & RLS Helper Box */}
+          <div className="bg-amber-50/70 rounded-[24px] border border-amber-200/80 p-6 shadow-xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-serif font-bold text-amber-900 flex items-center space-x-2">
+                  <Trash2 className="w-4 h-4 text-amber-700" />
+                  <span>Physical Deletion &amp; Row Level Security (RLS) Alignment</span>
+                </h3>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  Supabase defaults to restricting table deletions under Row Level Security. Run this 2-line snippet in Supabase SQL Editor so deleting a resident in the portal or clicking &quot;Sync All&quot; immediately deletes them from your Supabase Table Editor:
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(SUPABASE_DELETE_POLICY_SQL);
+                  setCopiedDeleteSql(true);
+                  setTimeout(() => setCopiedDeleteSql(false), 2000);
+                }}
+                className="px-3.5 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-full text-xs font-semibold flex items-center space-x-1.5 shadow-xs transition-colors cursor-pointer self-start sm:self-auto shrink-0"
+              >
+                {copiedDeleteSql ? <Check className="w-3.5 h-3.5" /> : <FileCode className="w-3.5 h-3.5" />}
+                <span>{copiedDeleteSql ? 'Copied Delete SQL!' : 'Copy 2-Line Delete SQL'}</span>
+              </button>
+            </div>
+
+            <pre className="bg-white text-amber-950 p-3.5 rounded-xl text-xs font-mono overflow-x-auto leading-relaxed border border-amber-200">
+              {SUPABASE_DELETE_POLICY_SQL}
             </pre>
           </div>
 
